@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CMS Report MD Purwokerto</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef7ff;color:#173d68}
+.wrap{max-width:1100px;margin:auto;padding:24px 16px 50px}.top{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-bottom:18px}
+h1{margin:0;color:#1244a5;font-size:28px}.muted{color:#6a8199;font-size:13px}
+.card{background:#fff;border:1px solid #dcebf7;border-radius:18px;padding:18px;box-shadow:0 10px 28px rgba(32,91,145,.10);margin:14px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.field label{display:block;font-size:12px;font-weight:700;margin-bottom:6px;color:#54708d}
+input,select{width:100%;padding:11px 12px;border:1px solid #cbddea;border-radius:10px;outline:none;font-size:14px}input:focus,select:focus{border-color:#4d9be8}
+button{border:0;border-radius:10px;padding:11px 15px;font-weight:700;cursor:pointer}.primary{background:#176fd0;color:#fff}.secondary{background:#eaf4ff;color:#1760ad}.danger{background:#ffe9e9;color:#b42318}.success{background:#e8f8ef;color:#157347}
+.login{max-width:420px;margin:10vh auto}.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}
+.menu{display:grid;grid-template-columns:50px 1.3fr 2fr 100px 90px 48px;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid #edf2f7}.menu.head{font-size:12px;font-weight:700;color:#6b8299}.menu button{padding:8px}
+.toolbar{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}.status{padding:8px 10px;border-radius:9px;font-size:12px;background:#f2f7fb;color:#5c7690}
+@media(max-width:760px){.grid{grid-template-columns:1fr}.menu{grid-template-columns:35px 1fr 1fr 75px 70px}.menu .link{grid-column:2/-1}.menu .desc{grid-column:2/-1}.menu.head{display:none}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const API_URL="https://script.google.com/macros/s/AKfycbwae7TOGmeRL0Bt0BxfmauZkUB3xqpbWofDSlZkxhpe7qaZVC8FL7D8ymOd1u3c6w65/exec";
+let state={menus:[],settings:{}}, pin="";
+// Panggil Apps Script via fetch (POST text/plain agar tidak kena preflight CORS)
+async function api(action,payload={}){
+ const res=await fetch(API_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({action,...payload})});
+ if(!res.ok) throw new Error("Server tidak merespons ("+res.status+")");
+ const j=await res.json();
+ if(!j.ok) throw new Error(j.message||"Terjadi kesalahan");
+ return j.data;
+}
+const app=document.getElementById("app");
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
+
+function login(){
+ app.innerHTML=`<div class="login card">
+  <h1>CMS Report MD</h1><p class="muted">Masukkan PIN admin untuk mengelola landing page.</p>
+  <input id="pin" type="password" inputmode="numeric" placeholder="PIN admin">
+  <div style="height:10px"></div><button class="primary" onclick="doLogin()">MASUK</button>
+  <p id="msg" class="muted"></p>
+ </div>`;
+}
+function doLogin(){
+ pin=document.getElementById("pin").value;
+ msg("Memeriksa PIN...");
+ api("getState",{pin}).then(s=>{state=s||{};state.menus=state.menus||[];state.settings=state.settings||{};render()}).catch(e=>msg(e.message));
+}
+function msg(t){const x=document.getElementById("msg");if(x)x.textContent=t;}
+function render(){
+ app.innerHTML=`<div class="wrap">
+  <div class="top"><div><h1>CMS Report MD Purwokerto</h1><div class="muted">Edit konten tanpa deploy ulang landing page.</div></div>
+  <button class="secondary" onclick="changePinUI()">Ganti PIN</button></div>
+  <div class="card"><h3>Pengaturan Landing Page</h3>
+   <div class="grid">
+    <div class="field"><label>JUDUL</label><input id="title" value="${esc(state.settings.title||"REPORT MD PURWOKERTO")}"></div>
+    <div class="field"><label>SUBTITLE</label><input id="subtitle" value="${esc(state.settings.subtitle||"Pilih nama untuk melihat report")}"></div>
+    <div class="field"><label>PLACEHOLDER PENCARIAN</label><input id="searchPlaceholder" value="${esc(state.settings.searchPlaceholder||"Cari nama...")}"></div>
+   </div>
+  </div>
+  <div class="card"><div class="toolbar"><div><h3 style="margin:0">Menu / Report</h3><div class="muted">Tambah, edit, urutkan, aktifkan/nonaktifkan, atau ganti link.</div></div><button class="secondary" onclick="addMenu()">+ Tambah Menu</button></div>
+   <div id="menus"></div>
+  </div>
+  <div class="card"><div class="toolbar"><span id="saveMsg" class="status">Belum ada perubahan.</span><button class="primary" onclick="save()">SIMPAN PERUBAHAN</button></div></div>
+ </div>`;
+ renderMenus();
+}
+function renderMenus(){
+ const box=document.getElementById("menus");
+ box.innerHTML=`<div class="menu head"><div>No</div><div>Nama</div><div>Link</div><div>Status</div><div>Urutan</div><div></div></div>`;
+ state.menus.forEach((m,i)=>{
+  const d=document.createElement("div"); d.className="menu"; d.dataset.i=i;
+  d.innerHTML=`<div>${i+1}</div>
+   <input class="name" value="${esc(m.nama)}">
+   <input class="link" value="${esc(m.link)}">
+   <select class="statusSel"><option ${m.status==="AKTIF"?"selected":""}>AKTIF</option><option ${m.status!=="AKTIF"?"selected":""}>NONAKTIF</option></select>
+   <input class="order" type="number" value="${Number(m.urutan||i+1)}">
+   <button class="danger" onclick="removeMenu(${i})">×</button>
+   <input class="desc" placeholder="Deskripsi singkat (opsional)" value="${esc(m.deskripsi||"")}">`;
+  box.appendChild(d);
+ });
+}
+function collect(){
+ state.settings.title=document.getElementById("title").value;
+ state.settings.subtitle=document.getElementById("subtitle").value;
+ state.settings.searchPlaceholder=document.getElementById("searchPlaceholder").value;
+ [...document.querySelectorAll(".menu:not(.head)")].forEach((el,i)=>{
+  const m=state.menus[i];
+  m.nama=el.querySelector(".name").value;m.link=el.querySelector(".link").value;
+  m.status=el.querySelector(".statusSel").value;m.urutan=Number(el.querySelector(".order").value||i+1);
+  m.deskripsi=el.querySelector(".desc").value;
+ });
+}
+function save(){
+ collect();
+ const s=document.getElementById("saveMsg");s.textContent="Menyimpan...";
+ api("saveState",{pin,state}).then(r=>{s.textContent=((r&&r.message)||"Tersimpan")+" • "+new Date().toLocaleTimeString("id-ID");})
+ .catch(e=>{s.textContent="Gagal: "+e.message;});
+}
+function addMenu(){collect();state.menus.push({nama:"Menu Baru",link:"#",status:"AKTIF",urutan:state.menus.length+1,deskripsi:""});renderMenus();}
+function removeMenu(i){if(confirm("Hapus menu ini?")){collect();state.menus.splice(i,1);state.menus.forEach((m,j)=>m.urutan=j+1);renderMenus();}}
+function changePinUI(){
+ const n=prompt("Masukkan PIN baru (minimal 6 digit):");if(!n)return;
+ api("changePin",{pin,newPin:n}).then(()=>{pin=n;alert("PIN berhasil diubah.")}).catch(e=>alert(e.message));
+}
+login();
+</script>
+</body>
+</html>
