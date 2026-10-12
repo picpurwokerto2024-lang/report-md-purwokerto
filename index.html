@@ -328,6 +328,75 @@
     }
     @keyframes spin { to { transform:rotate(360deg); } }
   </style>
+  <style>
+    /* ===== TAMPILAN KOTAK (GRID) ===== */
+    .container {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      padding: 20px;
+    }
+    .container .loading,
+    .container .empty { grid-column: 1 / -1; }
+
+    .btn {
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: flex-start;
+      min-height: 190px;
+      margin: 0;
+      padding: 20px 18px 54px;
+      border-radius: 20px;
+    }
+    .btn-icon {
+      width: 54px;
+      height: 54px;
+      min-width: 54px;
+      margin: 0 0 16px;
+    }
+    .btn-content {
+      flex: 1;
+      width: 100%;
+      padding-right: 0;
+      font-size: 18px;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+    .btn-content small { font-size: 13px; margin-top: 6px; line-height: 1.25; }
+    .btn::after {
+      position: absolute;
+      right: 16px;
+      bottom: 12px;
+      font-size: 26px;
+    }
+
+    @media (max-width: 900px) {
+      .container { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 700px) {
+      .container { gap: 10px; padding: 10px; }
+      .btn { min-height: 150px; padding: 14px 12px 44px; border-radius: 16px; }
+      .btn-icon { width: 42px; height: 42px; min-width: 42px; margin-bottom: 10px; }
+      .btn-icon svg { width: 22px; height: 22px; }
+      .btn-content { font-size: 14px; }
+      .btn-content small { font-size: 11px; }
+      .btn::after { right: 12px; bottom: 8px; font-size: 22px; }
+    }
+    @media (max-width: 340px) {
+      .container { grid-template-columns: 1fr; }
+    }
+  </style>
+  <style>
+    /* ===== WARNA KOTAK (bisa diubah dari Admin) ===== */
+    .btn:not(.disabled) {
+      background: var(--btn-bg, linear-gradient(105deg, #1687e9 0%, #2c6dde 50%, #6849d9 100%));
+      color: var(--btn-fg, #fff);
+    }
+    .btn:not(.disabled) .btn-icon { border-color: var(--btn-fg, #fff); }
+    .btn:not(.disabled) .btn-icon svg { stroke: var(--btn-fg, #fff); }
+    .btn:not(.disabled)::after { color: var(--btn-fg, #fff); }
+    .btn:not(.disabled) .btn-content small { color: var(--btn-fg, rgba(255,255,255,.94)); opacity: .92; }
+  </style>
 </head>
 <body>
   <div class="brand-header">
@@ -408,6 +477,7 @@
           el.rel = "noopener noreferrer";
           el.className = "btn";
           el.style.animationDelay = `${index * 45}ms`;
+          if (item.warna) setBtnColors(el, item.warna);
           el.innerHTML = `
             <span class="btn-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
@@ -450,7 +520,8 @@
         link: m.link || "",
         status: m.status || "AKTIF",
         urutan: Number(m.urutan || i + 1),
-        deskripsi: m.deskripsi || ""
+        deskripsi: m.deskripsi || "",
+        warna: m.warna || ""
       }));
     }
 
@@ -493,7 +564,31 @@
       }
     }
 
+    // ===== Warna kotak (diatur dari Admin) =====
+    const HEX = /^#[0-9a-fA-F]{6}$/;
+    function lum(hex) {
+      const n = parseInt(hex.slice(1), 16);
+      return (0.299 * (n >> 16 & 255) + 0.587 * (n >> 8 & 255) + 0.114 * (n & 255)) / 255;
+    }
+    function shade(hex, f) {
+      const n = parseInt(hex.slice(1), 16);
+      const c = v => Math.max(0, Math.min(255, Math.round(v * f))).toString(16).padStart(2, "0");
+      return "#" + c(n >> 16 & 255) + c(n >> 8 & 255) + c(n & 255);
+    }
+    function setBtnColors(node, c1, c2) {
+      if (!HEX.test(c1 || "")) {
+        node.style.removeProperty("--btn-bg");
+        node.style.removeProperty("--btn-fg");
+        return false;
+      }
+      if (!HEX.test(c2 || "")) c2 = shade(c1, 0.78);
+      node.style.setProperty("--btn-bg", "linear-gradient(105deg, " + c1 + " 0%, " + c2 + " 100%)");
+      node.style.setProperty("--btn-fg", (lum(c1) + lum(c2)) / 2 > 0.65 ? "#12304f" : "#fff");
+      return true;
+    }
+
     function applySettings(settings) {
+      setBtnColors(container, settings.warna1, settings.warna2);
       if (settings.title) siteTitle.textContent = settings.title;
       if (settings.subtitle) siteSubtitle.textContent = settings.subtitle;
       if (settings.searchPlaceholder) searchInput.placeholder = settings.searchPlaceholder;
