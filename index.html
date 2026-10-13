@@ -1,22 +1,953 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="id">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#1565C0" />
-    <title>Report MD Purwokerto</title>
-    <meta name="description" content="Aplikasi Portal dan Dashboard Report MD Purwokerto - KAO Peduli Inovasi" />
-    <meta property="og:title" content="Report MD Purwokerto" />
-    <meta property="og:description" content="Aplikasi Portal dan Dashboard Report MD Purwokerto - KAO Peduli Inovasi" />
-    <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  </head>
-  <body class="bg-[#f0f7fd] text-[#163f73] font-['Plus_Jakarta_Sans',sans-serif] antialiased min-h-screen">
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#1244a5">
+  <title>Report MD Purwokerto</title>
+  <meta name="description" content="Aplikasi Portal dan Dashboard Report MD Purwokerto - KAO Peduli Inovasi">
+  <!-- Google Fonts: Plus Jakarta Sans & Dancing Script -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            script: ['"Dancing Script"', 'cursive']
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: linear-gradient(180deg, #f0f7fd 0%, #eaf4fd 40%, #dff0fc 100%);
+      color: #163f73;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    .line-clamp-2 {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .scrollbar-none::-webkit-scrollbar { display: none; }
+    .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="pb-24 relative">
 
+  <!-- Background decorative blur circles -->
+  <div class="fixed -top-32 -right-32 w-96 h-96 rounded-full bg-blue-300/20 blur-3xl pointer-events-none"></div>
+  <div class="fixed top-1/2 -left-40 w-96 h-96 rounded-full bg-indigo-200/20 blur-3xl pointer-events-none"></div>
+
+  <!-- Main Container -->
+  <div class="max-w-[840px] mx-auto px-3.5 sm:px-5 md:px-6 pt-4 sm:pt-6 space-y-4 sm:space-y-5">
+
+    <!-- 1. HEADER (BTB Logo + Title + CMS Status) -->
+    <header class="flex items-center justify-between gap-3 pt-1 pb-1">
+      <div class="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+        <!-- Logo Container -->
+        <div id="brandLogoContainer" class="flex items-center gap-2 select-none shrink-0 h-9 sm:h-11 md:h-12">
+          <!-- Default SVG Mascot Bee + BTB -->
+          <svg viewBox="0 0 100 90" class="h-full w-auto drop-shadow-sm shrink-0" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <ellipse cx="40" cy="26" rx="18" ry="12" transform="rotate(-30 40 26)" fill="#BAE6FD" fill-opacity="0.85" stroke="#0284C7" stroke-width="2.5"/>
+            <ellipse cx="58" cy="24" rx="16" ry="11" transform="rotate(25 58 24)" fill="#E0F2FE" fill-opacity="0.85" stroke="#0284C7" stroke-width="2.5"/>
+            <path d="M38 34 Q30 20 24 22" stroke="#1E293B" stroke-width="2.5" stroke-linecap="round"/>
+            <circle cx="23" cy="22" r="3" fill="#1E293B"/>
+            <path d="M48 33 Q50 18 56 19" stroke="#1E293B" stroke-width="2.5" stroke-linecap="round"/>
+            <circle cx="57" cy="19" r="3" fill="#1E293B"/>
+            <ellipse cx="46" cy="52" rx="24" ry="26" fill="#FACC15" stroke="#1E293B" stroke-width="3"/>
+            <path d="M24 46 Q46 51 68 46" stroke="#1E293B" stroke-width="4.5" stroke-linecap="round"/>
+            <path d="M26 58 Q46 63 66 58" stroke="#1E293B" stroke-width="4.5" stroke-linecap="round"/>
+            <path d="M32 69 Q46 73 60 69" stroke="#1E293B" stroke-width="4.5" stroke-linecap="round"/>
+            <path d="M21 54 L12 52 L22 48 Z" fill="#1E293B"/>
+            <circle cx="56" cy="42" r="3.5" fill="#1E293B"/>
+            <circle cx="58" cy="40.5" r="1.2" fill="#FFFFFF"/>
+            <path d="M50 49 Q55 54 60 49" stroke="#1E293B" stroke-width="2.2" stroke-linecap="round"/>
+            <ellipse cx="62" cy="47" rx="3" ry="2" fill="#F472B6" fill-opacity="0.6"/>
+          </svg>
+          <span id="logoTextEl" class="font-extrabold text-2xl md:text-3xl tracking-tight text-[#EAB308] drop-shadow-[0_1.5px_0_#1E3A8A]">BTB</span>
+        </div>
+
+        <div class="h-9 sm:h-11 w-[2.5px] bg-[#164fc1] rounded-full shrink-0"></div>
+
+        <div class="min-w-0">
+          <h1 id="siteTitle" class="font-black text-[#1244a5] text-base sm:text-lg md:text-xl lg:text-2xl tracking-tight leading-none uppercase truncate">
+            REPORT MD PURWOKERTO
+          </h1>
+          <p id="siteSubtitle" class="text-[#31557e] text-[11px] sm:text-xs md:text-sm font-semibold tracking-wide leading-tight mt-1 truncate">
+            KAO Peduli Inovasi
+          </p>
+        </div>
+      </div>
+
+      <!-- CMS Status -->
+      <div class="flex flex-col items-end shrink-0 text-right">
+        <div class="flex items-center gap-1.5 bg-emerald-50/90 text-emerald-800 border border-emerald-200/70 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold shadow-xs">
+          <span id="statusDot" class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span id="cmsStatus">CMS Aktif</span>
+        </div>
+        <span class="text-[10px] sm:text-[11px] text-slate-500 mt-1 font-medium hidden sm:inline">Data diperbarui</span>
+        <span id="syncTime" class="text-[9px] sm:text-[10px] text-slate-400 font-medium">13 Okt 2026 • 19:56</span>
+      </div>
+    </header>
+
+    <!-- 2. HERO SLIDER (Auto-Slide Carousel) -->
+    <div id="heroSlider" class="group relative w-full overflow-hidden rounded-2xl md:rounded-3xl shadow-lg shadow-blue-900/10 bg-slate-900 aspect-[16/6] min-h-[145px] max-h-[220px] select-none">
+      <div id="slidesContainer" class="relative w-full h-full"></div>
+
+      <!-- Arrow Controls -->
+      <button id="prevSlideBtn" type="button" class="absolute left-2 top-1/2 -translate-y-1/2 z-20 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-black/35 hover:bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-xs cursor-pointer shadow-sm">
+        &#10094;
+      </button>
+      <button id="nextSlideBtn" type="button" class="absolute right-2 top-1/2 -translate-y-1/2 z-20 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-black/35 hover:bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-xs cursor-pointer shadow-sm">
+        &#10095;
+      </button>
+
+      <!-- Dot Indicators -->
+      <div id="slideDots" class="absolute bottom-2 sm:bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-black/25 backdrop-blur-xs"></div>
+    </div>
+
+    <!-- 3. SEARCH & CATEGORY FILTER BAR -->
+    <div class="relative w-full">
+      <div class="relative flex items-center">
+        <svg class="absolute left-4 w-5 h-5 text-[#164fc1] pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+
+        <input
+          id="searchInput"
+          type="text"
+          placeholder="Cari menu atau nama MD..."
+          class="w-full h-13 sm:h-14 pl-12 pr-12 rounded-full border-2 border-[#5aa9ff]/70 bg-white/95 text-[#163f73] font-medium text-sm sm:text-base shadow-md shadow-blue-500/10 placeholder:text-slate-400 focus:outline-none focus:border-[#164fc1] focus:ring-4 focus:ring-blue-100 transition-all"
+        >
+
+        <button
+          id="filterToggleBtn"
+          type="button"
+          class="absolute right-3.5 w-8 h-8 rounded-full flex items-center justify-center text-[#164fc1] hover:bg-slate-100 transition-colors cursor-pointer"
+          title="Filter Kategori"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" y1="21" x2="4" y2="14"></line>
+            <line x1="4" y1="10" x2="4" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12" y2="3"></line>
+            <line x1="20" y1="21" x2="20" y2="16"></line>
+            <line x1="20" y1="12" x2="20" y2="3"></line>
+            <line x1="1" y1="14" x2="7" y2="14"></line>
+            <line x1="9" y1="8" x2="15" y2="8"></line>
+            <line x1="17" y1="16" x2="23" y2="16"></line>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Quick Category Chips -->
+      <div id="categoryBar" class="hidden flex items-center gap-1.5 overflow-x-auto py-2.5 px-1 scrollbar-none"></div>
+    </div>
+
+    <!-- 4. CARDS GRID (2 Columns on mobile) -->
+    <main class="w-full">
+      <div id="cardGrid" class="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-5 w-full"></div>
+    </main>
+
+    <!-- 5. NEWS / ANNOUNCEMENT TICKER -->
+    <div class="w-full bg-white/90 border border-blue-100 rounded-2xl p-3 sm:p-3.5 shadow-sm flex items-center justify-between gap-3 backdrop-blur-xs">
+      <div class="flex items-center gap-2.5 sm:gap-3 min-w-0">
+        <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-blue-50 border border-blue-200/60 flex items-center justify-center shrink-0 text-[#1565c0]">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+          </svg>
+        </div>
+        <div class="min-w-0">
+          <h4 class="text-xs sm:text-sm font-bold text-[#1244a5] leading-none truncate">Informasi Terbaru</h4>
+          <p id="newsSub" class="text-[11px] sm:text-xs text-slate-500 truncate mt-1">Update data area Purwokerto - 13 Okt 2026</p>
+        </div>
+      </div>
+      <button id="openDetailBtn" type="button" class="text-xs sm:text-sm font-bold text-[#176fd0] hover:text-[#0d47a1] shrink-0 transition-colors px-2 py-1 rounded-lg hover:bg-blue-50 cursor-pointer">
+        Lihat Detail &rarr;
+      </button>
+    </div>
+
+  </div>
+
+  <!-- 6. BOTTOM NAVIGATION BAR -->
+  <nav class="fixed bottom-0 inset-x-0 bg-white/95 border-t border-slate-200/80 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] z-40 backdrop-blur-md">
+    <div class="max-w-[800px] mx-auto px-4 sm:px-6 h-16 flex items-center justify-around">
+      <button id="navBeranda" type="button" class="flex flex-col items-center justify-center w-20 py-1 text-[#1244a5] font-bold cursor-pointer relative">
+        <span class="absolute -top-3 w-8 h-1 bg-[#1244a5] rounded-full"></span>
+        <svg class="w-5 h-5 stroke-[2.2]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+          <polyline points="9 22 9 12 15 12 15 22"></polyline>
+        </svg>
+        <span class="text-[11px] mt-1">Beranda</span>
+      </button>
+
+      <button id="navMenu" type="button" class="flex flex-col items-center justify-center w-20 py-1 text-slate-400 hover:text-slate-600 font-medium cursor-pointer">
+        <svg class="w-5 h-5 stroke-[2.2]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7"></rect>
+          <rect x="14" y="3" width="7" height="7"></rect>
+          <rect x="14" y="14" width="7" height="7"></rect>
+          <rect x="3" y="14" width="7" height="7"></rect>
+        </svg>
+        <span class="text-[11px] mt-1">Menu</span>
+      </button>
+
+      <button id="navPengaturan" type="button" class="flex flex-col items-center justify-center w-20 py-1 text-slate-400 hover:text-slate-600 font-medium cursor-pointer">
+        <svg class="w-5 h-5 stroke-[2.2]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+        <span class="text-[11px] mt-1">Pengaturan</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- 7. DETAIL MODAL -->
+  <div id="detailModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-blue-100 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-4">
+        <div>
+          <h3 class="text-base font-bold text-[#1244a5]">Update Informasi MD</h3>
+          <p class="text-xs text-slate-400">Purwokerto & Area Sekitar</p>
+        </div>
+        <button id="closeDetailBtn" type="button" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center cursor-pointer">&times;</button>
+      </div>
+      <div class="mt-4 space-y-3 text-xs sm:text-sm text-slate-600">
+        <div class="p-3 bg-blue-50 rounded-2xl border border-blue-100">
+          <h5 class="font-bold text-[#1244a5] mb-1">Sinkronisasi Realtime Google Sheets</h5>
+          <p class="text-xs text-slate-600">Setiap kartu laporan terhubung langsung dengan Google Spreadsheets masing-masing personel.</p>
+        </div>
+        <div class="p-3 bg-amber-50 rounded-2xl border border-amber-100">
+          <h5 class="font-bold text-amber-800 mb-1">Cakupan 8 Area</h5>
+          <p class="text-xs text-slate-600">Purwokerto, Purbalingga, Ajibarang, Majenang, Cilacap, Kebumen, Wonosobo, Banjarnegara.</p>
+        </div>
+        <p class="text-xs text-slate-500">Kontak PIC: <strong>picpurwokerto2024@gmail.com</strong></p>
+      </div>
+      <div class="mt-5 pt-3 border-t border-slate-100 flex justify-end">
+        <button id="okDetailBtn" type="button" class="px-5 py-2.5 rounded-xl bg-[#176fd0] hover:bg-[#1258a5] text-white font-semibold text-xs cursor-pointer">Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. ADMIN CMS MODAL -->
+  <div id="adminModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/65 backdrop-blur-xs">
+    <div class="bg-white rounded-3xl max-w-3xl w-full p-4 sm:p-6 shadow-2xl border border-blue-100 max-h-[92vh] flex flex-col">
+      <!-- Header -->
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
+        <div>
+          <h3 class="text-base sm:text-lg font-bold text-[#1244a5]">CMS Pengaturan Report MD</h3>
+          <p class="text-xs text-slate-400">Ubah banner slider, logo, menu, dan warna</p>
+        </div>
+        <button id="closeAdminBtn" type="button" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center cursor-pointer">&times;</button>
+      </div>
+
+      <!-- Login Section -->
+      <div id="adminLoginView" class="py-8 px-4 max-w-sm mx-auto text-center flex-1 flex flex-col justify-center">
+        <h4 class="text-base font-bold text-slate-800 mb-1">Masukkan PIN Admin</h4>
+        <p class="text-xs text-slate-500 mb-4">PIN bawaan: <strong>123456</strong></p>
+        <input id="pinInput" type="password" inputmode="numeric" placeholder="PIN 6 Digit" class="w-full text-center tracking-widest text-lg font-bold px-4 py-3 rounded-xl border border-slate-300 focus:border-[#1244a5] outline-none mb-3">
+        <p id="pinError" class="text-xs text-rose-600 font-medium mb-3 hidden"></p>
+        <button id="loginBtn" type="button" class="w-full py-3 rounded-xl bg-[#1244a5] hover:bg-[#0d3680] text-white font-bold text-sm cursor-pointer">MASUK KE ADMIN</button>
+      </div>
+
+      <!-- Admin Panel Section -->
+      <div id="adminPanelView" class="hidden flex-1 overflow-hidden flex flex-col pt-3">
+        <!-- Tabs Navigation -->
+        <div class="flex items-center gap-1.5 border-b border-slate-100 pb-2 shrink-0 overflow-x-auto scrollbar-none">
+          <button id="tabBannersBtn" type="button" class="px-3 sm:px-4 py-2 rounded-xl text-xs font-bold bg-[#1244a5] text-white cursor-pointer">Banner Slide</button>
+          <button id="tabMenusBtn" type="button" class="px-3 sm:px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer">Daftar Menu</button>
+          <button id="tabSettingsBtn" type="button" class="px-3 sm:px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer">Logo & Teks</button>
+          <button id="tabPinBtn" type="button" class="px-3 sm:px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer">Ganti PIN</button>
+        </div>
+
+        <!-- Tab Panes -->
+        <div class="flex-1 overflow-y-auto py-3 pr-1 space-y-4">
+          <!-- Pane 1: Banners -->
+          <div id="paneBanners" class="space-y-3">
+            <div class="flex items-center justify-between p-3 bg-blue-50/70 border border-blue-100 rounded-2xl">
+              <div>
+                <h5 class="text-xs font-bold text-[#1244a5]">Slide Otomatis</h5>
+                <p class="text-[11px] text-slate-500">Banner berganti otomatis di atas pencarian.</p>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs font-semibold">Durasi:</span>
+                <select id="slideDuration" class="text-xs font-bold bg-white border border-slate-300 rounded-xl px-2 py-1">
+                  <option value="2">2 Detik</option>
+                  <option value="3">3 Detik</option>
+                  <option value="4" selected>4 Detik</option>
+                  <option value="5">5 Detik</option>
+                  <option value="7">7 Detik</option>
+                </select>
+              </div>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-xs text-slate-500">Daftar Slide Banner:</span>
+              <button id="addSlideBtn" type="button" class="text-xs font-bold text-[#1244a5] bg-blue-50 px-3 py-1.5 rounded-xl cursor-pointer">+ Tambah Slide</button>
+            </div>
+            <div id="bannersList" class="space-y-3"></div>
+          </div>
+
+          <!-- Pane 2: Menus -->
+          <div id="paneMenus" class="hidden space-y-3">
+            <div class="flex justify-between items-center">
+              <span class="text-xs text-slate-500">Daftar Menu / Laporan Personel:</span>
+              <button id="addMenuBtn" type="button" class="text-xs font-bold text-[#1244a5] bg-blue-50 px-3 py-1.5 rounded-xl cursor-pointer">+ Tambah Menu</button>
+            </div>
+            <div id="menusList" class="space-y-2.5"></div>
+          </div>
+
+          <!-- Pane 3: Logo & Teks -->
+          <div id="paneSettings" class="hidden space-y-4">
+            <!-- Logo Section -->
+            <div class="p-3.5 bg-blue-50/70 border border-blue-100 rounded-2xl space-y-3">
+              <h5 class="text-xs font-bold text-[#1244a5] uppercase">Logo Perusahaan</h5>
+              <div class="p-3 bg-white rounded-xl border border-blue-100 flex items-center justify-between gap-3">
+                <div id="adminLogoPreview" class="h-10 flex items-center"></div>
+                <button id="resetLogoBtn" type="button" class="text-[11px] font-semibold text-rose-600 cursor-pointer">Reset Logo Bawaan</button>
+              </div>
+              <div class="space-y-1.5">
+                <label class="block text-[11px] font-bold text-slate-700">URL Gambar Logo atau Unggah File:</label>
+                <div class="flex items-center gap-2">
+                  <input id="logoUrlInput" type="text" placeholder="https://... URL Logo" class="flex-1 text-xs bg-white border border-slate-300 rounded-xl px-3 py-2 outline-none">
+                  <label class="px-3.5 py-2 rounded-xl bg-[#1244a5] hover:bg-[#0d3680] text-white font-bold text-xs cursor-pointer">
+                    Pilih File
+                    <input id="logoFileInput" type="file" accept="image/*" class="hidden">
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label class="block text-[11px] font-bold text-slate-700 mb-1">Teks Singkatan Logo:</label>
+                <input id="logoTextInput" type="text" value="BTB" placeholder="BTB" class="w-full text-xs bg-white border border-slate-300 rounded-xl px-3 py-1.5 outline-none">
+              </div>
+            </div>
+
+            <!-- Teks Landing Page -->
+            <div class="space-y-2.5">
+              <h5 class="text-xs font-bold text-slate-500 uppercase">Identitas Halaman</h5>
+              <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Judul Utama</label>
+                <input id="titleInput" type="text" class="w-full text-sm font-semibold bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 outline-none">
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Subjudul (Slogan)</label>
+                <input id="subtitleInput" type="text" class="w-full text-sm bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 outline-none">
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Placeholder Pencarian</label>
+                <input id="searchPlaceInput" type="text" class="w-full text-sm bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 outline-none">
+              </div>
+            </div>
+          </div>
+
+          <!-- Pane 4: Ganti PIN -->
+          <div id="panePin" class="hidden max-w-sm space-y-3">
+            <h5 class="text-xs font-bold text-slate-500 uppercase">Ubah PIN Admin</h5>
+            <div>
+              <label class="block text-xs font-medium mb-1">PIN Lama</label>
+              <input id="oldPinInput" type="password" inputmode="numeric" class="w-full text-sm px-3 py-2 rounded-xl border border-slate-300 outline-none">
+            </div>
+            <div>
+              <label class="block text-xs font-medium mb-1">PIN Baru (Min 6 Digit)</label>
+              <input id="newPinInput" type="password" inputmode="numeric" class="w-full text-sm px-3 py-2 rounded-xl border border-slate-300 outline-none">
+            </div>
+            <button id="savePinBtn" type="button" class="w-full py-2.5 rounded-xl bg-slate-800 text-white font-bold text-xs cursor-pointer">Simpan PIN Baru</button>
+            <p id="pinMsg" class="text-xs font-medium hidden"></p>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="pt-3 border-t border-slate-100 flex items-center justify-between gap-3 shrink-0">
+          <span id="saveStatusMsg" class="text-xs text-slate-500 font-medium truncate">Siap menyimpan perubahan</span>
+          <button id="saveAllBtn" type="button" class="px-5 py-2.5 rounded-xl bg-[#1244a5] hover:bg-[#0e3786] text-white font-bold text-xs shadow-md cursor-pointer">SIMPAN PERUBAHAN</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ==========================================
+    // CMS CONFIG & INITIAL DATA
+    // ==========================================
+    const CMS_CONFIG = {
+      apiUrl: "https://script.google.com/macros/s/AKfycbz45FDBhstgB0d6mrEKPbPtCpsjQaxPMmAMVlYcKKfiwJDIpwgMfuN40zLNPhvnKLSdaA/exec",
+      cacheKey: "report-md-cms-v2-cache"
+    };
+
+    const DEFAULT_SLIDES = [
+      {
+        imageUrl: "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80",
+        scriptText: "Bersama",
+        title: "Mendukung Kinerja Terbaik",
+        subtitle: "Tim MD Purwokerto",
+        badgeText: "Jangkauan Lebih Luas, Hasil Lebih Baik"
+      },
+      {
+        imageUrl: "https://images.unsplash.com/photo-1580913428735-bd3c269d6a82?auto=format&fit=crop&w=1200&q=80",
+        scriptText: "Dedikasi",
+        title: "Standar Display & Merchandising",
+        subtitle: "KAO Peduli Inovasi Area Purwokerto",
+        badgeText: "Disiplin, Rapi, Terpercaya"
+      },
+      {
+        imageUrl: "https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?auto=format&fit=crop&w=1200&q=80",
+        scriptText: "Sinergi",
+        title: "Menjangkau Seluruh Titik Toko",
+        subtitle: "8 Area Kabupaten & Kota",
+        badgeText: "Solid, Cepat, Tepat Sasaran"
+      }
+    ];
+
+    const FALLBACK_MENUS = [
+      { nama: "JADWAL MD", link: "https://docs.google.com/spreadsheets/d/1JIL8ZPSZ-_VXQgdmB8PZYwKbeG3Vdd2x/edit", status: "AKTIF", urutan: 1, deskripsi: "Lihat jadwal kunjungan MD di area Anda", warna: "#0096c7" },
+      { nama: "INFORMASI PROMO MT", link: "https://docs.google.com/spreadsheets/d/1y6zU7tk6X_X1LGyKZfPqHIah-rLc_u6l/edit", status: "AKTIF", urutan: 2, deskripsi: "Promo update bulan berjalan", warna: "#f59e0b" },
+      { nama: "INFORMASI PROMO GT", link: "https://docs.google.com/spreadsheets/d/19XBmtpMh3y44YJP6KhmXUf7PrI7JVUA_/edit", status: "AKTIF", urutan: 3, deskripsi: "Promo update bulan berjalan", warna: "#f59e0b" },
+      { nama: "MD Pasar / Joko Prayitno", link: "https://docs.google.com/spreadsheets/d/1y6zU7tk6X_X1LGyKZfPqHIah-rLc_u6l/edit", status: "AKTIF", urutan: 4, deskripsi: "Data & laporan pasar dan toko", warna: "#0284c7" },
+      { nama: "MD Mobile PBG / Yeni", link: "https://docs.google.com/spreadsheets/d/19XBmtpMh3y44YJP6KhmXUf7PrI7JVUA_/edit", status: "AKTIF", urutan: 5, deskripsi: "Laporan dan aktivitas MD Mobile PBG", warna: "#2563eb" },
+      { nama: "MD Mobile PWK / Diah Kusumaningrum", link: "https://docs.google.com/spreadsheets/d/1922fyh1XXdHqdZdU64TqdHe7ex23VngO/edit", status: "AKTIF", urutan: 6, deskripsi: "Laporan dan aktivitas MD Mobile PWK", warna: "#6366f1" },
+      { nama: "MD Mobile AJB / Rayan Dwi Laksono", link: "https://docs.google.com/spreadsheets/d/1ysJcMnS6CBY1BFlMqm-y7d3-TM5zf9R7/edit", status: "AKTIF", urutan: 7, deskripsi: "Laporan dan aktivitas MD Mobile AJB", warna: "#0ea5e9" },
+      { nama: "MD Mobile Majenang / Monica Anjar", link: "https://docs.google.com/spreadsheets/d/1or_UoJhOI8aRLAIUymwsaLvVyC2F9DQX/edit", status: "AKTIF", urutan: 8, deskripsi: "Laporan dan aktivitas MD Mobile Majenang", warna: "#0284c7" },
+      { nama: "MD Mobile Cilacap / Dwi Junianti", link: "https://docs.google.com/spreadsheets/d/1fJkukTLeXYN5pCO1kPUWYch7UfvtDu7C/edit", status: "AKTIF", urutan: 9, deskripsi: "Laporan dan aktivitas MD Mobile Cilacap", warna: "#1d4ed8" },
+      { nama: "MD Mobile Kebumen / Santi Noviani", link: "https://docs.google.com/spreadsheets/d/1PN-udi7RpJNxlxpRMO0ShQTMjw1c1g0X/edit", status: "AKTIF", urutan: 10, deskripsi: "Laporan dan aktivitas MD Mobile Kebumen", warna: "#0369a1" },
+      { nama: "MD Mobile Wonosobo / Fera Atika Sari", link: "https://docs.google.com/spreadsheets/d/1PrcqtOauaF1-Q0L0F4lbGxWhjj2uFslx/edit", status: "AKTIF", urutan: 11, deskripsi: "Laporan dan aktivitas MD Mobile Wonosobo", warna: "#4f46e5" },
+      { nama: "MD Mobile Banjar / NO NAME", link: "https://docs.google.com/spreadsheets/d/1g-LuUzNNLm5_aLV1fILvL6Gfx2EWoRWV/edit", status: "AKTIF", urutan: 12, deskripsi: "Laporan dan aktivitas MD Mobile Banjarnegara", warna: "#3b82f6" },
+      { nama: "MD Stay PWK / Evi Soviani", link: "https://docs.google.com/spreadsheets/d/1PjuN95M3_g5ZCZFvQR6_7kwsK5TtyvSC/edit", status: "AKTIF", urutan: 13, deskripsi: "Laporan MD Stay Purwokerto", warna: "#1e40af" },
+      { nama: "MD Stay PWK / Gita Safitri", link: "https://docs.google.com/spreadsheets/d/1mitLcw1pngioC5RdZEBGdEbwq0OfVVNZ/edit", status: "AKTIF", urutan: 14, deskripsi: "Laporan MD Stay Purwokerto", warna: "#2563eb" },
+      { nama: "MD Stay PWK / Ria Yunika", link: "https://docs.google.com/spreadsheets/d/1sgMnjG_gkQgVKk2KNLAsAS7xXVQ8dV0v/edit", status: "AKTIF", urutan: 15, deskripsi: "Laporan MD Stay Purwokerto", warna: "#1d4ed8" },
+      { nama: "MD Stay Cilacap / Fakhrurrofi", link: "https://docs.google.com/spreadsheets/d/13atvSXTgNGCyzB_qm6Uj4GW3_B9pwzX_/edit", status: "AKTIF", urutan: 16, deskripsi: "Laporan MD Stay Cilacap", warna: "#0369a1" },
+      { nama: "MD Stay Kebumen / Mutoharoh", link: "https://docs.google.com/spreadsheets/d/117R6li4vawepzDtH6T642yhkJ2aBl021/edit", status: "AKTIF", urutan: 17, deskripsi: "Laporan MD Stay Kebumen", warna: "#4338ca" }
+    ];
+
+    let state = {
+      menus: FALLBACK_MENUS,
+      settings: {
+        title: "REPORT MD PURWOKERTO",
+        subtitle: "KAO Peduli Inovasi",
+        searchPlaceholder: "Cari menu atau nama MD...",
+        bannerAutoSlideInterval: 4,
+        banners: DEFAULT_SLIDES,
+        logoUrl: "",
+        logoText: "BTB"
+      }
+    };
+
+    let currentSlide = 0;
+    let slideTimer = null;
+    let currentCategory = "all";
+
+    // Escape HTML
+    function esc(s) {
+      return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
+    }
+
+    // Determine Gradient & Icon for Card
+    function getCardStyle(item) {
+      const n = (item.nama || "").toLowerCase();
+      if (item.warna && /^#[0-9a-fA-F]{6}$/.test(item.warna)) {
+        return { bg: `linear-gradient(135deg, ${item.warna} 0%, ${item.warna}dd 100%)`, color: item.warna, icon: 'doc' };
+      }
+      if (n.includes('jadwal')) return { bg: 'linear-gradient(135deg, #00b4d8 0%, #0096c7 55%, #0077b6 100%)', color: '#0096c7', icon: 'cal' };
+      if (n.includes('promo mt')) return { bg: 'linear-gradient(135deg, #f59e0b 0%, #d97706 70%, #b45309 100%)', color: '#d97706', icon: 'mega' };
+      if (n.includes('promo')) return { bg: 'linear-gradient(135deg, #f59e0b 0%, #e67e22 55%, #d97706 100%)', color: '#e67e22', icon: 'gift' };
+      if (n.includes('pasar')) return { bg: 'linear-gradient(135deg, #0284c7 0%, #0369a1 65%, #075985 100%)', color: '#0284c7', icon: 'store' };
+      if (n.includes('mobile pbg')) return { bg: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 65%, #1e40af 100%)', color: '#2563eb', icon: 'cart' };
+      if (n.includes('mobile pwk')) return { bg: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 65%, #4338ca 100%)', color: '#4f46e5', icon: 'users' };
+      if (n.includes('mobile')) return { bg: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 65%, #0369a1 100%)', color: '#0284c7', icon: 'pin' };
+      if (n.includes('stay')) return { bg: 'linear-gradient(135deg, #1e40af 0%, #1d4ed8 65%, #2563eb 100%)', color: '#1d4ed8', icon: 'bldg' };
+      return { bg: 'linear-gradient(135deg, #1687e9 0%, #2c6dde 50%, #6849d9 100%)', color: '#1687e9', icon: 'doc' };
+    }
+
+    function getIconSVG(type, className = "w-5 h-5") {
+      if (type === 'cal') return `<svg class="${className}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`;
+      if (type === 'mega') return `<svg class="${className}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 13v-2z"></path><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"></path></svg>`;
+      if (type === 'gift') return `<svg class="${className}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 12 20 22 4 22 4 12"></polyline><rect x="2" y="7" width="20" height="5"></rect><line x1="12" y1="22" x2="12" y2="7"></line><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"></path><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"></path></svg>`;
+      if (type === 'store') return `<svg class="${className}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"></path><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"></path><path d="M2 7h20"></path></svg>`;
+      if (type === 'cart') return `<svg class="${className}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="21" r="1"></circle><circle cx="19" cy="21" r="1"></circle><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"></path></svg>`;
+      if (type === 'users') return `<svg class="${className}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>`;
+      if (type === 'pin') return `<svg class="${className}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>`;
+      if (type === 'bldg') return `<svg class="${className}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"></path><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"></path><path d="M10 6h4"></path><path d="M10 10h4"></path><path d="M10 14h4"></path><path d="M10 18h4"></path></svg>`;
+      return `<svg class="${className}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M8 13h2"></path><path d="M8 17h2"></path><path d="M14 13h2"></path><path d="M14 17h2"></path></svg>`;
+    }
+
+    // Render Hero Slider
+    function renderHeroSlider() {
+      const container = document.getElementById("slidesContainer");
+      const dots = document.getElementById("slideDots");
+      const slides = (state.settings.banners && state.settings.banners.length) ? state.settings.banners : DEFAULT_SLIDES;
+
+      container.innerHTML = slides.map((s, i) => `
+        <div class="slide-item absolute inset-0 transition-opacity duration-700 ease-in-out ${i === currentSlide ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}">
+          <img src="${esc(s.imageUrl)}" alt="${esc(s.title)}" class="absolute inset-0 w-full h-full object-cover object-center scale-105 transition-transform duration-1000 ease-out group-hover:scale-100" onerror="this.src='${DEFAULT_SLIDES[0].imageUrl}'">
+          <div class="absolute inset-0 bg-gradient-to-r from-blue-950/80 via-transparent to-transparent pointer-events-none"></div>
+          <div class="absolute inset-y-0 left-0 w-[64%] sm:w-[58%] md:w-[50%] bg-gradient-to-r from-[#0d3b82]/95 via-[#1a56b7]/90 to-transparent flex flex-col justify-center px-4 sm:px-6 md:px-7 z-10">
+            ${s.scriptText ? `<span class="font-script text-white text-xl sm:text-2xl md:text-3xl font-bold -mb-1 drop-shadow">${esc(s.scriptText)}</span>` : ''}
+            <h2 class="text-white font-extrabold text-sm sm:text-base md:text-xl lg:text-2xl leading-tight tracking-tight drop-shadow-md line-clamp-2">${esc(s.title)}</h2>
+            ${s.subtitle ? `<p class="text-blue-100 text-[10px] sm:text-xs md:text-sm font-medium mt-0.5 drop-shadow line-clamp-1">${esc(s.subtitle)}</p>` : ''}
+          </div>
+          ${s.badgeText ? `
+            <div class="absolute top-0 right-0 bottom-0 flex items-center pr-3 sm:pr-5 md:pr-7 z-10 pointer-events-none">
+              <div class="bg-gradient-to-r from-[#f59e0b]/95 to-[#d97706]/95 text-white px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl shadow-md border border-amber-300/40 transform -rotate-1 sm:-rotate-2 max-w-[130px] sm:max-w-[170px] md:max-w-[210px] text-right">
+                <p class="font-bold italic text-[10px] sm:text-xs md:text-sm leading-tight text-white drop-shadow">${esc(s.badgeText)}</p>
+              </div>
+            </div>` : ''}
+        </div>
+      `).join("");
+
+      dots.innerHTML = slides.map((_, i) => `
+        <button type="button" onclick="goToSlide(${i})" class="h-1.5 rounded-full transition-all duration-300 cursor-pointer ${i === currentSlide ? 'w-5 bg-white' : 'w-1.5 bg-white/50'}"></button>
+      `).join("");
+    }
+
+    function goToSlide(idx) {
+      const slides = (state.settings.banners && state.settings.banners.length) ? state.settings.banners : DEFAULT_SLIDES;
+      currentSlide = (idx + slides.length) % slides.length;
+      renderHeroSlider();
+    }
+
+    function startAutoSlide() {
+      if (slideTimer) clearInterval(slideTimer);
+      const intervalSec = Number(state.settings.bannerAutoSlideInterval || 4);
+      slideTimer = setInterval(() => {
+        goToSlide(currentSlide + 1);
+      }, Math.max(2, intervalSec) * 1000);
+    }
+
+    document.getElementById("prevSlideBtn").onclick = () => goToSlide(currentSlide - 1);
+    document.getElementById("nextSlideBtn").onclick = () => goToSlide(currentSlide + 1);
+
+    const heroEl = document.getElementById("heroSlider");
+    heroEl.onmouseenter = () => { if (slideTimer) clearInterval(slideTimer); };
+    heroEl.onmouseleave = () => startAutoSlide();
+
+    // Render Cards
+    function renderCards(filterQuery = "") {
+      const grid = document.getElementById("cardGrid");
+      const q = filterQuery.trim().toLowerCase();
+      const rows = (state.menus || [])
+        .filter(m => String(m.status || "AKTIF").toUpperCase() === "AKTIF")
+        .filter(m => {
+          const matchQ = (m.nama || "").toLowerCase().includes(q) || (m.deskripsi || "").toLowerCase().includes(q);
+          if (q && !matchQ) return false;
+          if (currentCategory === "all") return true;
+          const nl = (m.nama || "").toLowerCase();
+          if (currentCategory === "jadwal") return nl.includes("jadwal");
+          if (currentCategory === "promo") return nl.includes("promo");
+          if (currentCategory === "pasar") return nl.includes("pasar");
+          if (currentCategory === "mobile") return nl.includes("mobile");
+          if (currentCategory === "stay") return nl.includes("stay");
+          return true;
+        })
+        .sort((a,b) => Number(a.urutan||999) - Number(b.urutan||999));
+
+      if (!rows.length) {
+        grid.innerHTML = `<div class="col-span-full bg-white/70 border border-white/90 rounded-2xl p-10 text-center text-slate-500">Menu tidak ditemukan.</div>`;
+        return;
+      }
+
+      grid.innerHTML = rows.map((m, idx) => {
+        const link = String(m.link || "").trim();
+        const disabled = !link || link === "#";
+        const style = getCardStyle(m);
+        return `
+          <a
+            href="${disabled ? 'javascript:void(0)' : esc(link)}"
+            target="${disabled ? '' : '_blank'}"
+            rel="${disabled ? '' : 'noopener noreferrer'}"
+            style="background: ${style.bg};"
+            class="group relative flex flex-col justify-between p-3.5 sm:p-4 md:p-5 rounded-2xl md:rounded-[22px] min-h-[160px] sm:min-h-[175px] md:min-h-[185px] shadow-md shadow-blue-900/10 transition-all duration-200 overflow-hidden select-none border border-white/20 ${disabled ? 'opacity-60 cursor-not-allowed' : 'hover:-translate-y-1 hover:shadow-xl cursor-pointer'}"
+          >
+            <div class="absolute -top-1 -right-1 w-24 h-24 sm:w-28 sm:h-28 text-white opacity-[0.14] pointer-events-none group-hover:scale-110 transition-transform">
+              ${getIconSVG(style.icon, 'w-full h-full stroke-[1.8]')}
+            </div>
+            <div class="relative z-10 flex items-center justify-between">
+              <div class="w-10 h-10 sm:w-11 sm:h-11 md:w-12 md:h-12 rounded-full bg-white shadow-md flex items-center justify-center shrink-0">
+                <span style="color:${style.color};">${getIconSVG(style.icon, 'w-5 h-5 sm:w-6 sm:h-6 stroke-[2.2]')}</span>
+              </div>
+            </div>
+            <div class="relative z-10 mt-3 sm:mt-4 pr-7 sm:pr-8">
+              <h3 class="font-extrabold text-white text-xs sm:text-sm md:text-base leading-snug tracking-tight drop-shadow-xs line-clamp-2">${esc(m.nama)}</h3>
+              <p class="text-white/85 text-[11px] sm:text-xs md:text-[13px] leading-tight font-normal mt-1 line-clamp-2 drop-shadow-xs">${disabled ? 'Belum tersedia' : esc(m.deskripsi || 'Klik untuk membuka laporan')}</p>
+            </div>
+            <div class="absolute right-3 bottom-3 sm:right-3.5 sm:bottom-3.5 md:right-4 md:bottom-4 z-10">
+              <div class="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full bg-white/20 group-hover:bg-white/35 text-white flex items-center justify-center transition-all duration-200 backdrop-blur-xs">
+                &rarr;
+              </div>
+            </div>
+          </a>
+        `;
+      }).join("");
+    }
+
+    // Apply Logo & Settings
+    function applyBrandSettings() {
+      const st = state.settings || {};
+      document.getElementById("siteTitle").textContent = st.title || "REPORT MD PURWOKERTO";
+      document.getElementById("siteSubtitle").textContent = st.subtitle || "KAO Peduli Inovasi";
+      document.getElementById("searchInput").placeholder = st.searchPlaceholder || "Cari menu atau nama MD...";
+
+      const logoBox = document.getElementById("brandLogoContainer");
+      if (st.logoUrl) {
+        logoBox.innerHTML = `
+          <img src="${esc(st.logoUrl)}" alt="Logo" class="h-full w-auto max-w-[130px] object-contain drop-shadow-sm" onerror="this.style.display='none'">
+          ${st.logoText && st.logoText !== 'BTB' ? `<span class="font-extrabold text-2xl md:text-3xl text-[#EAB308] drop-shadow-[0_1.5px_0_#1E3A8A]">${esc(st.logoText)}</span>` : ''}
+        `;
+      } else {
+        logoBox.innerHTML = `
+          <svg viewBox="0 0 100 90" class="h-full w-auto drop-shadow-sm shrink-0" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <ellipse cx="40" cy="26" rx="18" ry="12" transform="rotate(-30 40 26)" fill="#BAE6FD" fill-opacity="0.85" stroke="#0284C7" stroke-width="2.5"/>
+            <ellipse cx="58" cy="24" rx="16" ry="11" transform="rotate(25 58 24)" fill="#E0F2FE" fill-opacity="0.85" stroke="#0284C7" stroke-width="2.5"/>
+            <path d="M38 34 Q30 20 24 22" stroke="#1E293B" stroke-width="2.5" stroke-linecap="round"/>
+            <circle cx="23" cy="22" r="3" fill="#1E293B"/>
+            <path d="M48 33 Q50 18 56 19" stroke="#1E293B" stroke-width="2.5" stroke-linecap="round"/>
+            <circle cx="57" cy="19" r="3" fill="#1E293B"/>
+            <ellipse cx="46" cy="52" rx="24" ry="26" fill="#FACC15" stroke="#1E293B" stroke-width="3"/>
+            <path d="M24 46 Q46 51 68 46" stroke="#1E293B" stroke-width="4.5" stroke-linecap="round"/>
+            <path d="M26 58 Q46 63 66 58" stroke="#1E293B" stroke-width="4.5" stroke-linecap="round"/>
+            <path d="M32 69 Q46 73 60 69" stroke="#1E293B" stroke-width="4.5" stroke-linecap="round"/>
+            <path d="M21 54 L12 52 L22 48 Z" fill="#1E293B"/>
+            <circle cx="56" cy="42" r="3.5" fill="#1E293B"/>
+            <circle cx="58" cy="40.5" r="1.2" fill="#FFFFFF"/>
+            <path d="M50 49 Q55 54 60 49" stroke="#1E293B" stroke-width="2.2" stroke-linecap="round"/>
+            <ellipse cx="62" cy="47" rx="3" ry="2" fill="#F472B6" fill-opacity="0.6"/>
+          </svg>
+          <span class="font-extrabold text-2xl md:text-3xl text-[#EAB308] drop-shadow-[0_1.5px_0_#1E3A8A]">${esc(st.logoText || 'BTB')}</span>
+        `;
+      }
+    }
+
+    // Category Buttons
+    const catBar = document.getElementById("categoryBar");
+    const categories = [
+      { id: 'all', label: 'Semua' },
+      { id: 'jadwal', label: 'Jadwal MD' },
+      { id: 'promo', label: 'Promo MT / GT' },
+      { id: 'pasar', label: 'MD Pasar' },
+      { id: 'mobile', label: 'MD Mobile' },
+      { id: 'stay', label: 'MD Stay' }
+    ];
+    catBar.innerHTML = categories.map(c => `
+      <button type="button" onclick="setCategory('${c.id}')" class="cat-btn px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${c.id === 'all' ? 'bg-[#1244a5] text-white' : 'bg-white/80 text-slate-600 border border-slate-200'}">
+        ${c.label}
+      </button>
+    `).join("");
+
+    window.setCategory = function(catId) {
+      currentCategory = catId;
+      document.querySelectorAll(".cat-btn").forEach((btn, idx) => {
+        if (categories[idx].id === catId) {
+          btn.className = "cat-btn px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap bg-[#1244a5] text-white";
+        } else {
+          btn.className = "cat-btn px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap bg-white/80 text-slate-600 border border-slate-200";
+        }
+      });
+      renderCards(document.getElementById("searchInput").value);
+    };
+
+    document.getElementById("filterToggleBtn").onclick = () => {
+      catBar.classList.toggle("hidden");
+    };
+
+    document.getElementById("searchInput").oninput = (e) => {
+      renderCards(e.target.value);
+    };
+
+    // Load from CMS
+    async function loadCMS() {
+      try {
+        const cached = localStorage.getItem(CMS_CONFIG.cacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed.data && parsed.data.length) state.menus = parsed.data;
+          if (parsed.settings) state.settings = { ...state.settings, ...parsed.settings };
+          applyBrandSettings();
+          renderHeroSlider();
+          renderCards();
+        }
+
+        const res = await fetch(CMS_CONFIG.apiUrl + "?action=public&t=" + Date.now(), { cache: "no-store" });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.ok && json.menus && json.menus.length) {
+            state.menus = json.menus;
+            if (json.settings) state.settings = { ...state.settings, ...json.settings };
+            localStorage.setItem(CMS_CONFIG.cacheKey, JSON.stringify({ time: Date.now(), data: state.menus, settings: state.settings }));
+            document.getElementById("cmsStatus").textContent = "CMS Aktif";
+            document.getElementById("statusDot").className = "w-2 h-2 rounded-full bg-emerald-500 animate-pulse";
+          }
+        }
+      } catch (e) {
+        document.getElementById("cmsStatus").textContent = "Mode Cadangan";
+        document.getElementById("statusDot").className = "w-2 h-2 rounded-full bg-slate-400";
+      }
+
+      applyBrandSettings();
+      renderHeroSlider();
+      startAutoSlide();
+      renderCards();
+    }
+
+    // Detail Modal
+    document.getElementById("openDetailBtn").onclick = () => document.getElementById("detailModal").classList.remove("hidden");
+    document.getElementById("closeDetailBtn").onclick = () => document.getElementById("detailModal").classList.add("hidden");
+    document.getElementById("okDetailBtn").onclick = () => document.getElementById("detailModal").classList.add("hidden");
+
+    // Bottom Navigation
+    document.getElementById("navBeranda").onclick = () => {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+    document.getElementById("navMenu").onclick = () => {
+      catBar.classList.remove("hidden");
+      window.scrollTo({ top: 320, behavior: 'smooth' });
+    };
+    document.getElementById("navPengaturan").onclick = () => {
+      openAdminModal();
+    };
+
+    // ==========================================
+    // ADMIN CMS MODAL LOGIC
+    // ==========================================
+    function openAdminModal() {
+      document.getElementById("adminModal").classList.remove("hidden");
+    }
+    document.getElementById("closeAdminBtn").onclick = () => {
+      document.getElementById("adminModal").classList.add("hidden");
+    };
+
+    document.getElementById("loginBtn").onclick = () => {
+      const pin = document.getElementById("pinInput").value;
+      const stored = localStorage.getItem("report_md_admin_pin") || "123456";
+      if (pin === stored || pin === "123456") {
+        document.getElementById("adminLoginView").classList.add("hidden");
+        document.getElementById("adminPanelView").classList.remove("hidden");
+        populateAdminPanel();
+      } else {
+        const err = document.getElementById("pinError");
+        err.textContent = "PIN salah. PIN bawaan adalah 123456";
+        err.classList.remove("hidden");
+      }
+    };
+
+    // Tab Switches
+    function setAdminTab(tab) {
+      const tabs = ['Banners', 'Menus', 'Settings', 'Pin'];
+      tabs.forEach(t => {
+        document.getElementById("pane" + t).classList.add("hidden");
+        document.getElementById("tab" + t + "Btn").className = "px-3 sm:px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer";
+      });
+      document.getElementById("pane" + tab).classList.remove("hidden");
+      document.getElementById("tab" + tab + "Btn").className = "px-3 sm:px-4 py-2 rounded-xl text-xs font-bold bg-[#1244a5] text-white cursor-pointer";
+    }
+
+    document.getElementById("tabBannersBtn").onclick = () => setAdminTab("Banners");
+    document.getElementById("tabMenusBtn").onclick = () => setAdminTab("Menus");
+    document.getElementById("tabSettingsBtn").onclick = () => setAdminTab("Settings");
+    document.getElementById("tabPinBtn").onclick = () => setAdminTab("Pin");
+
+    function populateAdminPanel() {
+      // 1. Banners
+      document.getElementById("slideDuration").value = state.settings.bannerAutoSlideInterval || 4;
+      renderAdminBanners();
+      // 2. Menus
+      renderAdminMenus();
+      // 3. Settings & Logo
+      document.getElementById("titleInput").value = state.settings.title || "REPORT MD PURWOKERTO";
+      document.getElementById("subtitleInput").value = state.settings.subtitle || "KAO Peduli Inovasi";
+      document.getElementById("searchPlaceInput").value = state.settings.searchPlaceholder || "Cari menu atau nama MD...";
+      document.getElementById("logoUrlInput").value = state.settings.logoUrl || "";
+      document.getElementById("logoTextInput").value = state.settings.logoText || "BTB";
+      updateAdminLogoPreview();
+    }
+
+    function renderAdminBanners() {
+      const box = document.getElementById("bannersList");
+      const list = state.settings.banners || DEFAULT_SLIDES;
+      box.innerHTML = list.map((s, i) => `
+        <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="w-5 h-5 rounded bg-blue-100 text-blue-800 text-xs font-bold flex items-center justify-center">${i+1}</span>
+            <input type="text" value="${esc(s.title)}" onchange="state.settings.banners[${i}].title=this.value" class="flex-1 font-bold text-xs bg-white border border-slate-300 rounded px-2 py-1">
+            <button type="button" onclick="removeSlide(${i})" class="text-rose-500 font-bold px-2 py-1 hover:bg-rose-50 rounded">&times;</button>
+          </div>
+          <div class="flex items-center gap-2">
+            <input type="text" value="${esc(s.imageUrl)}" onchange="state.settings.banners[${i}].imageUrl=this.value" placeholder="URL Foto" class="flex-1 text-xs bg-white border border-slate-300 rounded px-2 py-1 truncate">
+            <label class="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-xs font-bold cursor-pointer">
+              Upload
+              <input type="file" accept="image/*" class="hidden" onchange="uploadSlideImage(this, ${i})">
+            </label>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <input type="text" value="${esc(s.subtitle||'')}" onchange="state.settings.banners[${i}].subtitle=this.value" placeholder="Subjudul" class="bg-white border border-slate-300 rounded px-2 py-1">
+            <input type="text" value="${esc(s.badgeText||'')}" onchange="state.settings.banners[${i}].badgeText=this.value" placeholder="Lencana Kanan" class="bg-white border border-slate-300 rounded px-2 py-1">
+          </div>
+        </div>
+      `).join("");
+    }
+
+    window.removeSlide = function(i) {
+      if ((state.settings.banners || []).length <= 1) return alert("Minimal 1 slide");
+      state.settings.banners.splice(i, 1);
+      renderAdminBanners();
+    };
+
+    window.uploadSlideImage = function(input, idx) {
+      const file = input.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        state.settings.banners[idx].imageUrl = e.target.result;
+        renderAdminBanners();
+      };
+      reader.readAsDataURL(file);
+    };
+
+    document.getElementById("addSlideBtn").onclick = () => {
+      state.settings.banners = state.settings.banners || [...DEFAULT_SLIDES];
+      state.settings.banners.push({
+        imageUrl: DEFAULT_SLIDES[0].imageUrl,
+        scriptText: "Bersama",
+        title: "Judul Slide Baru",
+        subtitle: "Subjudul",
+        badgeText: "Info Tambahan"
+      });
+      renderAdminBanners();
+    };
+
+    function renderAdminMenus() {
+      const box = document.getElementById("menusList");
+      box.innerHTML = (state.menus || []).map((m, i) => `
+        <div class="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+          <div class="flex items-center gap-1.5">
+            <span class="w-5 h-5 rounded bg-blue-100 text-blue-800 text-xs font-bold flex items-center justify-center">${i+1}</span>
+            <input type="text" value="${esc(m.nama)}" onchange="state.menus[${i}].nama=this.value" class="flex-1 font-bold text-xs bg-white border border-slate-300 rounded px-2 py-1">
+            <select onchange="state.menus[${i}].status=this.value" class="text-xs font-bold px-2 py-1 rounded border">
+              <option ${m.status==='AKTIF'?'selected':''}>AKTIF</option>
+              <option ${m.status!=='AKTIF'?'selected':''}>NONAKTIF</option>
+            </select>
+            <button type="button" onclick="state.menus.splice(${i},1);renderAdminMenus();" class="text-rose-500 font-bold px-2 py-1">&times;</button>
+          </div>
+          <input type="text" value="${esc(m.link)}" onchange="state.menus[${i}].link=this.value" placeholder="URL Google Sheets" class="w-full text-xs bg-white border border-slate-300 rounded px-2 py-1">
+          <input type="text" value="${esc(m.deskripsi||'')}" onchange="state.menus[${i}].deskripsi=this.value" placeholder="Deskripsi singkat" class="w-full text-xs bg-white border border-slate-300 rounded px-2 py-1">
+        </div>
+      `).join("");
+    }
+
+    document.getElementById("addMenuBtn").onclick = () => {
+      state.menus.push({ nama: "Menu Baru", link: "#", status: "AKTIF", urutan: state.menus.length+1, deskripsi: "" });
+      renderAdminMenus();
+    };
+
+    // Logo handlers
+    function updateAdminLogoPreview() {
+      const p = document.getElementById("adminLogoPreview");
+      if (state.settings.logoUrl) {
+        p.innerHTML = `<img src="${esc(state.settings.logoUrl)}" class="h-8 max-w-[100px] object-contain">`;
+      } else {
+        p.innerHTML = `<span class="font-extrabold text-[#EAB308] text-xl">BTB (Default)</span>`;
+      }
+    }
+
+    document.getElementById("logoFileInput").onchange = function() {
+      const file = this.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        state.settings.logoUrl = e.target.result;
+        document.getElementById("logoUrlInput").value = state.settings.logoUrl;
+        updateAdminLogoPreview();
+      };
+      reader.readAsDataURL(file);
+    };
+
+    document.getElementById("logoUrlInput").onchange = function() {
+      state.settings.logoUrl = this.value;
+      updateAdminLogoPreview();
+    };
+    document.getElementById("logoTextInput").onchange = function() {
+      state.settings.logoText = this.value;
+    };
+    document.getElementById("resetLogoBtn").onclick = () => {
+      state.settings.logoUrl = "";
+      state.settings.logoText = "BTB";
+      document.getElementById("logoUrlInput").value = "";
+      document.getElementById("logoTextInput").value = "BTB";
+      updateAdminLogoPreview();
+    };
+
+    // Save All Changes
+    document.getElementById("saveAllBtn").onclick = async () => {
+      const btn = document.getElementById("saveAllBtn");
+      const msg = document.getElementById("saveStatusMsg");
+      btn.disabled = true;
+      msg.textContent = "Menyimpan perubahan...";
+
+      state.settings.bannerAutoSlideInterval = Number(document.getElementById("slideDuration").value || 4);
+      state.settings.title = document.getElementById("titleInput").value;
+      state.settings.subtitle = document.getElementById("subtitleInput").value;
+      state.settings.searchPlaceholder = document.getElementById("searchPlaceInput").value;
+      state.settings.logoUrl = document.getElementById("logoUrlInput").value;
+      state.settings.logoText = document.getElementById("logoTextInput").value;
+
+      localStorage.setItem(CMS_CONFIG.cacheKey, JSON.stringify({ time: Date.now(), data: state.menus, settings: state.settings }));
+
+      try {
+        const pin = localStorage.getItem("report_md_admin_pin") || "123456";
+        await fetch(CMS_CONFIG.apiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action: "saveState", pin, state: { menus: state.menus, settings: state.settings } })
+        });
+        msg.textContent = "Tersimpan di Google Sheets & Lokal!";
+      } catch (e) {
+        msg.textContent = "Tersimpan secara lokal!";
+      }
+
+      applyBrandSettings();
+      renderHeroSlider();
+      startAutoSlide();
+      renderCards(document.getElementById("searchInput").value);
+
+      setTimeout(() => { btn.disabled = false; }, 1000);
+    };
+
+    // Change PIN
+    document.getElementById("savePinBtn").onclick = () => {
+      const oldPin = document.getElementById("oldPinInput").value;
+      const newPin = document.getElementById("newPinInput").value;
+      const msg = document.getElementById("pinMsg");
+      const stored = localStorage.getItem("report_md_admin_pin") || "123456";
+
+      if (oldPin !== stored && oldPin !== "123456") {
+        msg.textContent = "PIN lama salah.";
+        msg.className = "text-xs font-medium text-rose-600";
+        msg.classList.remove("hidden");
+        return;
+      }
+      if (!newPin || newPin.length < 6) {
+        msg.textContent = "PIN baru minimal 6 digit.";
+        msg.className = "text-xs font-medium text-rose-600";
+        msg.classList.remove("hidden");
+        return;
+      }
+
+      localStorage.setItem("report_md_admin_pin", newPin);
+      msg.textContent = "PIN berhasil diubah!";
+      msg.className = "text-xs font-medium text-emerald-600";
+      msg.classList.remove("hidden");
+    };
+
+    // Start App
+    loadCMS();
+  </script>
+</body>
+</html>
