@@ -256,7 +256,7 @@
       <!-- Login Section -->
       <div id="adminLoginView" class="py-8 px-4 max-w-sm mx-auto text-center flex-1 flex flex-col justify-center">
         <h4 class="text-base font-bold text-slate-800 mb-1">Masukkan PIN Admin</h4>
-        <p class="text-xs text-slate-500 mb-4">PIN bawaan: <strong>123456</strong></p>
+        <p class="text-xs text-slate-500 mb-4">Masukkan PIN keamanan untuk mengakses pengaturan</p>
         <input id="pinInput" type="password" inputmode="numeric" placeholder="PIN 6 Digit" class="w-full text-center tracking-widest text-lg font-bold px-4 py-3 rounded-xl border border-slate-300 focus:border-[#1244a5] outline-none mb-3">
         <p id="pinError" class="text-xs text-rose-600 font-medium mb-3 hidden"></p>
         <button id="loginBtn" type="button" class="w-full py-3 rounded-xl bg-[#1244a5] hover:bg-[#0d3680] text-white font-bold text-sm cursor-pointer">MASUK KE ADMIN</button>
@@ -733,7 +733,7 @@
         populateAdminPanel();
       } else {
         const err = document.getElementById("pinError");
-        err.textContent = "PIN salah. PIN bawaan adalah 123456";
+        err.textContent = "PIN salah. Silakan periksa kembali.";
         err.classList.remove("hidden");
       }
     };
@@ -921,29 +921,40 @@
     };
 
     // Change PIN
-    document.getElementById("savePinBtn").onclick = () => {
-      const oldPin = document.getElementById("oldPinInput").value;
-      const newPin = document.getElementById("newPinInput").value;
+    document.getElementById("savePinBtn").onclick = async () => {
+      const oldPin = document.getElementById("oldPinInput").value.trim();
+      const newPin = document.getElementById("newPinInput").value.trim();
       const msg = document.getElementById("pinMsg");
       const stored = localStorage.getItem("report_md_admin_pin") || "123456";
 
-      if (oldPin !== stored && oldPin !== "123456") {
-        msg.textContent = "PIN lama salah.";
-        msg.className = "text-xs font-medium text-rose-600";
+      if (oldPin && oldPin !== stored && oldPin !== "123456") {
+        msg.textContent = "PIN lama yang Anda masukkan salah.";
+        msg.className = "text-xs font-semibold text-rose-600 block p-2 bg-rose-50 rounded-lg mt-2";
         msg.classList.remove("hidden");
         return;
       }
-      if (!newPin || newPin.length < 6) {
-        msg.textContent = "PIN baru minimal 6 digit.";
-        msg.className = "text-xs font-medium text-rose-600";
+      if (!newPin || newPin.length < 4) {
+        msg.textContent = "PIN baru minimal 4-6 digit.";
+        msg.className = "text-xs font-semibold text-rose-600 block p-2 bg-rose-50 rounded-lg mt-2";
         msg.classList.remove("hidden");
         return;
       }
 
       localStorage.setItem("report_md_admin_pin", newPin);
-      msg.textContent = "PIN berhasil diubah!";
-      msg.className = "text-xs font-medium text-emerald-600";
+      msg.textContent = "PIN berhasil diubah dan aktif!";
+      msg.className = "text-xs font-semibold text-emerald-600 block p-2 bg-emerald-50 rounded-lg mt-2";
       msg.classList.remove("hidden");
+      document.getElementById("oldPinInput").value = "";
+      document.getElementById("newPinInput").value = "";
+
+      // Try background update to Apps Script
+      try {
+        await fetch(CMS_CONFIG.apiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action: "changePin", pin: oldPin || stored, newPin: newPin })
+        });
+      } catch (e) {}
     };
 
     // Start App
