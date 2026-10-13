@@ -15,7 +15,11 @@ button{border:0;border-radius:10px;padding:11px 15px;font-weight:700;cursor:poin
 .login{max-width:420px;margin:10vh auto}.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}
 .menu{display:grid;grid-template-columns:50px 1.3fr 2fr 100px 90px 48px;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid #edf2f7}.menu.head{font-size:12px;font-weight:700;color:#6b8299}.menu button{padding:8px}
 .toolbar{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}.status{padding:8px 10px;border-radius:9px;font-size:12px;background:#f2f7fb;color:#5c7690}
-@media(max-width:760px){.grid{grid-template-columns:1fr}.menu{grid-template-columns:35px 1fr 1fr 75px 70px}.menu .link{grid-column:2/-1}.menu .desc{grid-column:2/-1}.menu.head{display:none}}
+input[type=checkbox]{width:auto;padding:0;margin:0}
+input[type=color]{width:64px;height:40px;padding:2px;cursor:pointer}input[type=color]:disabled{opacity:.35;cursor:not-allowed}
+.menu .desc{grid-column:2/4}.colorbox{grid-column:4/-1;display:flex;align-items:center;gap:8px;font-size:12px;color:#54708d}.colorbox label{display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:700}
+.prev{padding:14px;border-radius:14px;color:#fff;font-weight:700;font-size:14px;min-height:56px;display:flex;align-items:center}
+@media(max-width:760px){.menu .colorbox{grid-column:2/-1}.grid{grid-template-columns:1fr}.menu{grid-template-columns:35px 1fr 1fr 75px 70px}.menu .link{grid-column:2/-1}.menu .desc{grid-column:2/-1}.menu.head{display:none}}
 </style>
 </head>
 <body>
@@ -23,6 +27,15 @@ button{border:0;border-radius:10px;padding:11px 15px;font-weight:700;cursor:poin
 <script>
 const API_URL="https://script.google.com/macros/s/AKfycbwae7TOGmeRL0Bt0BxfmauZkUB3xqpbWofDSlZkxhpe7qaZVC8FL7D8ymOd1u3c6w65/exec";
 let state={menus:[],settings:{}}, pin="";
+const DEF1="#1687e9", DEF2="#6849d9", DEF3D="linear-gradient(105deg,#1687e9 0%,#2c6dde 50%,#6849d9 100%)";
+const HEX=/^#[0-9a-fA-F]{6}$/;
+const lum=h=>{const n=parseInt(h.slice(1),16);return (0.299*(n>>16&255)+0.587*(n>>8&255)+0.114*(n&255))/255};
+function prevColor(){
+ const c1=document.getElementById("warna1").value,c2=document.getElementById("warna2").value,p=document.getElementById("prev");
+ p.style.background=(c1===DEF1&&c2===DEF2)?DEF3D:`linear-gradient(105deg,${c1} 0%,${c2} 100%)`;
+ p.style.color=(lum(c1)+lum(c2))/2>0.65?"#12304f":"#fff";
+}
+function resetColor(){document.getElementById("warna1").value=DEF1;document.getElementById("warna2").value=DEF2;prevColor();}
 // Panggil Apps Script via fetch (POST text/plain agar tidak kena preflight CORS)
 async function api(action,payload={}){
  const res=await fetch(API_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({action,...payload})});
@@ -58,6 +71,14 @@ function render(){
     <div class="field"><label>SUBTITLE</label><input id="subtitle" value="${esc(state.settings.subtitle||"Pilih nama untuk melihat report")}"></div>
     <div class="field"><label>PLACEHOLDER PENCARIAN</label><input id="searchPlaceholder" value="${esc(state.settings.searchPlaceholder||"Cari nama...")}"></div>
    </div>
+   <h3 style="margin:18px 0 4px">Warna Kotak</h3>
+   <div class="muted" style="margin-bottom:10px">Warna dasar semua kotak (gradasi dari warna awal ke warna akhir). Warna khusus per menu bisa diatur di daftar menu di bawah.</div>
+   <div class="grid">
+    <div class="field"><label>WARNA AWAL</label><input type="color" id="warna1" value="${HEX.test(state.settings.warna1||"")?state.settings.warna1:DEF1}" oninput="prevColor()"></div>
+    <div class="field"><label>WARNA AKHIR</label><input type="color" id="warna2" value="${HEX.test(state.settings.warna2||"")?state.settings.warna2:DEF2}" oninput="prevColor()"></div>
+    <div class="field"><label>PRATINJAU</label><div id="prev" class="prev">Contoh Kotak ➜</div></div>
+    <div class="field"><label>&nbsp;</label><button class="secondary" onclick="resetColor()">Kembalikan warna awal</button></div>
+   </div>
   </div>
   <div class="card"><div class="toolbar"><div><h3 style="margin:0">Menu / Report</h3><div class="muted">Tambah, edit, urutkan, aktifkan/nonaktifkan, atau ganti link.</div></div><button class="secondary" onclick="addMenu()">+ Tambah Menu</button></div>
    <div id="menus"></div>
@@ -65,6 +86,7 @@ function render(){
   <div class="card"><div class="toolbar"><span id="saveMsg" class="status">Belum ada perubahan.</span><button class="primary" onclick="save()">SIMPAN PERUBAHAN</button></div></div>
  </div>`;
  renderMenus();
+ prevColor();
 }
 function renderMenus(){
  const box=document.getElementById("menus");
@@ -77,7 +99,9 @@ function renderMenus(){
    <select class="statusSel"><option ${m.status==="AKTIF"?"selected":""}>AKTIF</option><option ${m.status!=="AKTIF"?"selected":""}>NONAKTIF</option></select>
    <input class="order" type="number" value="${Number(m.urutan||i+1)}">
    <button class="danger" onclick="removeMenu(${i})">×</button>
-   <input class="desc" placeholder="Deskripsi singkat (opsional)" value="${esc(m.deskripsi||"")}">`;
+   <input class="desc" placeholder="Deskripsi singkat (opsional)" value="${esc(m.deskripsi||"")}">
+   <div class="colorbox"><label><input type="checkbox" class="useColor" ${HEX.test(m.warna||"")?"checked":""} onchange="this.closest('.colorbox').querySelector('.warna').disabled=!this.checked"> Warna khusus</label>
+    <input type="color" class="warna" value="${HEX.test(m.warna||"")?m.warna:DEF1}" ${HEX.test(m.warna||"")?"":"disabled"}></div>`;
   box.appendChild(d);
  });
 }
@@ -85,11 +109,15 @@ function collect(){
  state.settings.title=document.getElementById("title").value;
  state.settings.subtitle=document.getElementById("subtitle").value;
  state.settings.searchPlaceholder=document.getElementById("searchPlaceholder").value;
+ const c1=document.getElementById("warna1").value,c2=document.getElementById("warna2").value;
+ const isDef=(c1===DEF1&&c2===DEF2);
+ state.settings.warna1=isDef?"":c1;state.settings.warna2=isDef?"":c2;
  [...document.querySelectorAll(".menu:not(.head)")].forEach((el,i)=>{
   const m=state.menus[i];
   m.nama=el.querySelector(".name").value;m.link=el.querySelector(".link").value;
   m.status=el.querySelector(".statusSel").value;m.urutan=Number(el.querySelector(".order").value||i+1);
   m.deskripsi=el.querySelector(".desc").value;
+  m.warna=el.querySelector(".useColor").checked?el.querySelector(".warna").value:"";
  });
 }
 function save(){
@@ -98,7 +126,7 @@ function save(){
  api("saveState",{pin,state}).then(r=>{s.textContent=((r&&r.message)||"Tersimpan")+" • "+new Date().toLocaleTimeString("id-ID");})
  .catch(e=>{s.textContent="Gagal: "+e.message;});
 }
-function addMenu(){collect();state.menus.push({nama:"Menu Baru",link:"#",status:"AKTIF",urutan:state.menus.length+1,deskripsi:""});renderMenus();}
+function addMenu(){collect();state.menus.push({nama:"Menu Baru",link:"#",status:"AKTIF",urutan:state.menus.length+1,deskripsi:"",warna:""});renderMenus();}
 function removeMenu(i){if(confirm("Hapus menu ini?")){collect();state.menus.splice(i,1);state.menus.forEach((m,j)=>m.urutan=j+1);renderMenus();}}
 function changePinUI(){
  const n=prompt("Masukkan PIN baru (minimal 6 digit):");if(!n)return;
