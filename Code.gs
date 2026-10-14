@@ -136,8 +136,8 @@ function saveState(pin, payload) {
     let menusSheet = ss.getSheetByName('Menus');
     if (!menusSheet) menusSheet = ss.insertSheet('Menus');
     menusSheet.clear();
-    ensureCols_(menusSheet, 6);
-    menusSheet.getRange(1, 1, 1, 6).setValues([['Nama', 'Link', 'Status', 'Urutan', 'Deskripsi', 'Warna']]);
+    ensureCols_(menusSheet, 7);
+    menusSheet.getRange(1, 1, 1, 7).setValues([['Nama', 'Link', 'Status', 'Urutan', 'Deskripsi', 'Warna', 'FotoUrl']]);
 
     const menuRows = payload.menus.map((x, i) => [
       String(x.nama || '').trim(),
@@ -145,10 +145,11 @@ function saveState(pin, payload) {
       String(x.status || 'AKTIF').toUpperCase(),
       Number(x.urutan || i + 1),
       String(x.deskripsi || '').trim(),
-      cleanColor_(x.warna)
+      cleanColor_(x.warna),
+      truncateCell_(x.fotoUrl || '')
     ]);
     if (menuRows.length > 0) {
-      menusSheet.getRange(2, 1, menuRows.length, 6).setValues(menuRows);
+      menusSheet.getRange(2, 1, menuRows.length, 7).setValues(menuRows);
     }
     menusSheet.setFrozenRows(1);
   }
@@ -231,14 +232,16 @@ function changePin(oldPin, newPin) {
 function readMenus_(ss) {
   const sh = ss.getSheetByName('Menus');
   if (!sh || sh.getLastRow() < 2) return [];
-  ensureCols_(sh, 6);
-  return sh.getRange(2, 1, sh.getLastRow() - 1, 6).getValues().map((r, i) => ({
+  const numCols = Math.max(sh.getLastColumn(), 7);
+  ensureCols_(sh, numCols);
+  return sh.getRange(2, 1, sh.getLastRow() - 1, numCols).getValues().map((r, i) => ({
     nama: r[0],
     link: r[1],
     status: r[2] || 'AKTIF',
     urutan: r[3] || i + 1,
     deskripsi: r[4] || '',
-    warna: cleanColor_(r[5])
+    warna: cleanColor_(r[5]),
+    fotoUrl: r[6] ? String(r[6]).trim() : ''
   }));
 }
 

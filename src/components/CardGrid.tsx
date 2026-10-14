@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { MenuItem } from '../types';
 import {
   Calendar,
@@ -147,6 +148,43 @@ function getCardTheme(item: MenuItem, defaultWarna1?: string, defaultWarna2?: st
   };
 }
 
+function CardAvatarBadge({
+  fotoUrl,
+  alt,
+  Icon,
+  iconColor,
+}: {
+  fotoUrl?: string;
+  alt: string;
+  Icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+  iconColor: string;
+}) {
+  const [hasError, setHasError] = useState(false);
+
+  if (fotoUrl && !hasError) {
+    return (
+      <div className="w-10 h-10 sm:w-11 sm:h-11 md:w-12 md:h-12 rounded-full bg-white shadow-md p-0.5 shrink-0 transition-transform duration-200 group-hover:scale-110 overflow-hidden ring-2 ring-white/80">
+        <img
+          src={fotoUrl}
+          alt={alt}
+          className="w-full h-full object-cover rounded-full"
+          onError={() => setHasError(true)}
+          loading="lazy"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-10 h-10 sm:w-11 sm:h-11 md:w-12 md:h-12 rounded-full bg-white shadow-md flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-105">
+      <Icon
+        className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.2]"
+        style={{ color: iconColor }}
+      />
+    </div>
+  );
+}
+
 export default function CardGrid({ items, defaultWarna1, defaultWarna2 }: CardGridProps) {
   if (items.length === 0) {
     return (
@@ -212,14 +250,14 @@ export default function CardGrid({ items, defaultWarna1, defaultWarna2 }: CardGr
               )}
             </div>
 
-            {/* Top row: White circular Icon Badge */}
+            {/* Top row: White circular Icon Badge or MD Photo */}
             <div className="relative z-10 flex items-center justify-between">
-              <div className="w-10 h-10 sm:w-11 sm:h-11 md:w-12 md:h-12 rounded-full bg-white shadow-md flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-105">
-                <Icon
-                  className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.2]"
-                  style={{ color: theme.iconColor }}
-                />
-              </div>
+              <CardAvatarBadge
+                fotoUrl={item.fotoUrl}
+                alt={item.nama}
+                Icon={Icon}
+                iconColor={theme.iconColor}
+              />
             </div>
 
             {/* Middle/Bottom: Title & Description */}

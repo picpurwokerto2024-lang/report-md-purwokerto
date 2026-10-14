@@ -20,6 +20,8 @@ import {
   Layers,
   Sparkles,
   ShieldAlert,
+  Camera,
+  User,
 } from 'lucide-react';
 import BtbLogo from './BtbLogo';
 
@@ -71,7 +73,9 @@ export default function AdminModal({
   // Hidden file inputs
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const logoFileInputRef = useRef<HTMLInputElement | null>(null);
+  const menuPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadTargetIdx, setUploadTargetIdx] = useState<number | null>(null);
+  const [uploadMenuIdx, setUploadMenuIdx] = useState<number | null>(null);
 
   // Sync with prop updates ONLY when modal opens to prevent overwriting active edits
   const prevIsOpenRef = useRef(false);
@@ -256,6 +260,7 @@ export default function AdminModal({
         ...m,
         urutan: Number(m.urutan || idx + 1),
         warna: m.warna && HEX_REGEX.test(m.warna) ? m.warna : '',
+        fotoUrl: m.fotoUrl ? String(m.fotoUrl).trim() : '',
       }));
 
       const cleanSettings: SiteSettings = {
@@ -333,6 +338,7 @@ export default function AdminModal({
       deskripsi: 'Deskripsi laporan',
       warna: '',
       kategori: 'mobile',
+      fotoUrl: '',
     };
     setMenus([...menus, newItem]);
   };
@@ -498,6 +504,51 @@ export default function AdminModal({
     reader.readAsDataURL(file);
   };
 
+  const triggerMenuPhotoUpload = (idx: number) => {
+    setUploadMenuIdx(idx);
+    if (menuPhotoInputRef.current) {
+      menuPhotoInputRef.current.value = '';
+      menuPhotoInputRef.current.click();
+    }
+  };
+
+  const handleMenuPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || uploadMenuIdx === null) return;
+
+    if (file.size > 8 * 1024 * 1024) {
+      alert('Ukuran foto maksimal 8MB.');
+      return;
+    }
+
+    // Compress photo to 200x200 square avatar JPEG 0.75 (~8-12KB base64, fits cleanly in Google Sheets)
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = (uploadEvent) => {
+      img.src = uploadEvent.target?.result as string;
+      img.onload = () => {
+        // Crop center square for crisp round avatar
+        const size = Math.min(img.width, img.height);
+        const startX = (img.width - size) / 2;
+        const startY = (img.height - size) / 2;
+        const targetDim = 200;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetDim;
+        canvas.height = targetDim;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, startX, startY, size, size, 0, 0, targetDim, targetDim);
+          const compressed = canvas.toDataURL('image/jpeg', 0.75);
+          const next = [...menus];
+          next[uploadMenuIdx].fotoUrl = compressed;
+          setMenus(next);
+        }
+      };
+    };
+    reader.readAsDataURL(file);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/65 backdrop-blur-xs animate-in fade-in duration-200">
       {/* Hidden File Input for Banners */}
@@ -514,6 +565,15 @@ export default function AdminModal({
         type="file"
         ref={logoFileInputRef}
         onChange={handleLogoFileUpload}
+        accept="image/*"
+        className="hidden"
+      />
+
+      {/* Hidden File Input for Menu / MD Photo */}
+      <input
+        type="file"
+        ref={menuPhotoInputRef}
+        onChange={handleMenuPhotoUpload}
         accept="image/*"
         className="hidden"
       />
@@ -1079,6 +1139,81 @@ export default function AdminModal({
                               />
                             )}
                           </div>
+                        </div>
+
+                        {/* FOTO / ICON PERSONEL MD */}
+                        <div className="pt-2 border-t border-slate-200/60 flex flex-wrap items-center justify-between gap-2.5 bg-white/70 p-2.5 rounded-xl">
+                          <div className="flex items-center gap-2.5">
+                            {/* Avatar Preview */}
+                            <div className="relative w-10 h-10 rounded-full bg-slate-100 border-2 border-blue-200 flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
+                              {item.fotoUrl ? (
+                                <img
+                                  src={item.fotoUrl}
+                                  alt={item.nama}
+                                  className="w-full h-full object-cover rounded-full"
+                                  onError={(e) => {
+                                    (e.target as HTMLElement).style.display = 'none';
+                                  }}
+                                />
+                              ) : (
+                                <User className="w-5 h-5 text-slate-400" />
+                              )}
+                            </div>
+
+                            <div className="flex flex-col">
+                              <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                                <Camera className="w-3.5 h-3.5 text-blue-600" />
+                                <span>Foto / Icon MD</span>
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                {item.fotoUrl ? 'Foto MD kustom terpasang' : 'Menggunakan icon bawaan'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => triggerMenuPhotoUpload(idx)}
+                              className="flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg border border-blue-200/80 transition-colors cursor-pointer"
+                              title="Pilih foto dari HP/Laptop"
+                            >
+                              <Upload className="w-3 h-3" />
+                              <span>{item.fotoUrl ? 'Ganti Foto' : 'Unggah Foto MD'}</span>
+                            </button>
+
+                            {item.fotoUrl && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = [...menus];
+                                  next[idx].fotoUrl = '';
+                                  setMenus(next);
+                                }}
+                                className="flex items-center gap-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 px-2 py-1 rounded-lg transition-colors cursor-pointer"
+                                title="Hapus foto dan kembali ke icon bawaan"
+                              >
+                                <X className="w-3 h-3" />
+                                <span>Hapus</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Optional Direct URL / Google Drive link input */}
+                        <div className="flex items-center gap-1.5 px-1">
+                          <span className="text-[10px] font-medium text-slate-400 shrink-0">Atau Link Foto:</span>
+                          <input
+                            type="text"
+                            value={item.fotoUrl || ''}
+                            onChange={(e) => {
+                              const next = [...menus];
+                              next[idx].fotoUrl = convertGoogleDriveUrl(e.target.value);
+                              setMenus(next);
+                            }}
+                            placeholder="URL gambar atau link Google Drive (https://...)"
+                            className="flex-1 text-[11px] text-slate-600 bg-white border border-slate-200 rounded-md px-2 py-0.5 focus:border-blue-500 outline-none"
+                          />
                         </div>
                       </div>
                     ))}

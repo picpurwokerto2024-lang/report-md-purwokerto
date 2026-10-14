@@ -17,6 +17,7 @@ export interface MenuItem {
   deskripsi?: string;
   warna?: string;
   kategori?: string;
+  fotoUrl?: string;
 }
 
 export interface SiteSettings {
