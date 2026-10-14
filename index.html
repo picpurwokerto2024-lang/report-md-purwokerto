@@ -90,14 +90,20 @@
         </div>
       </div>
 
-      <!-- CMS Status -->
+      <!-- CMS Status & Live Clock -->
       <div class="flex flex-col items-end shrink-0 text-right">
-        <div class="flex items-center gap-1.5 bg-emerald-50/90 text-emerald-800 border border-emerald-200/70 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold shadow-xs">
-          <span id="statusDot" class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span id="cmsStatus">CMS Aktif</span>
+        <div class="flex items-center gap-1.5 sm:gap-2">
+          <button id="refreshCmsBtn" type="button" class="p-1 sm:p-1.5 rounded-full text-blue-700 bg-blue-100/70 hover:bg-blue-200 transition-all cursor-pointer shadow-2xs hover:rotate-45 text-xs font-bold" title="Segarkan Data">&#x21bb;</button>
+          <div class="flex items-center gap-1.5 bg-emerald-50/90 text-emerald-800 border border-emerald-200/70 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold shadow-xs">
+            <span id="statusDot" class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span id="cmsStatus">CMS Aktif</span>
+          </div>
         </div>
-        <span class="text-[10px] sm:text-[11px] text-slate-500 mt-1 font-medium hidden sm:inline">Data diperbarui</span>
-        <span id="syncTime" class="text-[9px] sm:text-[10px] text-slate-400 font-medium">13 Okt 2026 • 19:56</span>
+        <div class="flex items-center gap-1 mt-1 text-[10px] sm:text-xs font-mono font-bold text-slate-800 bg-white/80 border border-blue-200/60 px-2 py-0.5 rounded-md shadow-2xs">
+          <span>🕒</span>
+          <span id="liveClockDisplay">--:--:-- WIB</span>
+        </div>
+        <span id="syncTime" class="text-[9px] sm:text-[10px] text-slate-500 font-medium mt-0.5">Sinkron: Baru saja</span>
       </div>
     </header>
 
@@ -662,17 +668,57 @@
       renderCards(e.target.value);
     };
 
-    // Load from CMS
-    async function loadCMS() {
-      try {
-        const cached = localStorage.getItem(CMS_CONFIG.cacheKey);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (parsed.data && parsed.data.length) state.menus = parsed.data;
-          if (parsed.settings) state.settings = { ...state.settings, ...parsed.settings };
+    // Live Clock & Sync Timers
+    let lastSyncDate = new Date();
+    function updateLiveClock() {
+      const now = new Date();
+      const clockEl = document.getElementById("liveClockDisplay");
+      if (clockEl) {
+        clockEl.textContent = now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) + " WIB";
+      }
+      const syncEl = document.getElementById("syncTime");
+      if (syncEl) {
+        const diffSec = Math.floor((now.getTime() - lastSyncDate.getTime()) / 1000);
+        if (diffSec < 15) syncEl.textContent = "Sinkron: Baru saja";
+        else if (diffSec < 60) syncEl.textContent = `Sinkron: ${diffSec} dtk lalu`;
+        else if (diffSec < 3600) syncEl.textContent = `Sinkron: ${Math.floor(diffSec / 60)} mnt lalu`;
+        else syncEl.textContent = `Sinkron: ${lastSyncDate.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} WIB`;
+      }
+    }
+    setInterval(updateLiveClock, 1000);
+    updateLiveClock();
+
+    // Cross-tab broadcast receiver
+    try {
+      const bc = new BroadcastChannel('report_md_sync_channel');
+      bc.onmessage = (e) => {
+        if (e.data?.type === 'SYNC_DATA') {
+          if (e.data.menus) state.menus = e.data.menus;
+          if (e.data.settings) state.settings = e.data.settings;
+          lastSyncDate = new Date();
           applyBrandSettings();
           renderHeroSlider();
           renderCards();
+        }
+      };
+    } catch {}
+
+    // Load from CMS
+    async function loadCMS(isSilent = false) {
+      const statusDot = document.getElementById("statusDot");
+      const cmsStatus = document.getElementById("cmsStatus");
+      try {
+        if (!isSilent) {
+          const cached = localStorage.getItem(CMS_CONFIG.cacheKey);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (parsed.data && parsed.data.length) state.menus = parsed.data;
+            if (parsed.settings) state.settings = { ...state.settings, ...parsed.settings };
+            if (parsed.time) lastSyncDate = new Date(parsed.time);
+            applyBrandSettings();
+            renderHeroSlider();
+            renderCards();
+          }
         }
 
         const res = await fetch(CMS_CONFIG.apiUrl + "?action=public&t=" + Date.now(), { cache: "no-store" });
@@ -681,14 +727,16 @@
           if (json.ok && json.menus && json.menus.length) {
             state.menus = json.menus;
             if (json.settings) state.settings = { ...state.settings, ...json.settings };
+            lastSyncDate = new Date();
             localStorage.setItem(CMS_CONFIG.cacheKey, JSON.stringify({ time: Date.now(), data: state.menus, settings: state.settings }));
-            document.getElementById("cmsStatus").textContent = "CMS Aktif";
-            document.getElementById("statusDot").className = "w-2 h-2 rounded-full bg-emerald-500 animate-pulse";
+            cmsStatus.textContent = "CMS Aktif";
+            statusDot.className = "w-2 h-2 rounded-full bg-emerald-500 animate-pulse";
+            updateLiveClock();
           }
         }
       } catch (e) {
-        document.getElementById("cmsStatus").textContent = "Mode Cadangan";
-        document.getElementById("statusDot").className = "w-2 h-2 rounded-full bg-slate-400";
+        cmsStatus.textContent = "Mode Cadangan";
+        statusDot.className = "w-2 h-2 rounded-full bg-slate-400";
       }
 
       applyBrandSettings();
@@ -696,6 +744,13 @@
       startAutoSlide();
       renderCards();
     }
+
+    // Manual Refresh button
+    const refreshBtn = document.getElementById("refreshCmsBtn");
+    if (refreshBtn) refreshBtn.onclick = () => loadCMS(false);
+
+    // Auto-polling every 8 seconds across all devices
+    setInterval(() => loadCMS(true), 8000);
 
     // Detail Modal
     document.getElementById("openDetailBtn").onclick = () => document.getElementById("detailModal").classList.remove("hidden");
@@ -917,6 +972,13 @@
       state.settings.logoText = document.getElementById("logoTextInput").value;
 
       localStorage.setItem(CMS_CONFIG.cacheKey, JSON.stringify({ time: Date.now(), data: state.menus, settings: state.settings }));
+      lastSyncDate = new Date();
+
+      try {
+        const bc = new BroadcastChannel('report_md_sync_channel');
+        bc.postMessage({ type: 'SYNC_DATA', menus: state.menus, settings: state.settings });
+        bc.close();
+      } catch {}
 
       try {
         const pin = localStorage.getItem("report_md_admin_pin") || "123456";
@@ -927,12 +989,12 @@
         });
         const json = await res.json();
         if (json.ok) {
-          msg.textContent = "✅ Tersimpan di Google Sheets & Seluruh Perangkat!";
+          msg.textContent = "✅ Tersimpan di Google Sheets & Cloud! Seluruh pengguna akan otomatis terupdate.";
         } else {
           msg.textContent = "⚠️ Google Sheets: " + (json.message || "Gagal menyimpan");
         }
       } catch (e) {
-        msg.textContent = "⚠️ Tersimpan lokal. Periksa koneksi / update Code.gs";
+        msg.textContent = "⚠️ Tersimpan di perangkat ini. Update Code.gs di Apps Script jika diperlukan.";
       }
 
       applyBrandSettings();
