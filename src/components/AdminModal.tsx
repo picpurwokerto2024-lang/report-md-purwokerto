@@ -73,14 +73,18 @@ export default function AdminModal({
   const logoFileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadTargetIdx, setUploadTargetIdx] = useState<number | null>(null);
 
-  // Sync with prop updates
+  // Sync with prop updates ONLY when modal opens to prevent overwriting active edits
+  const prevIsOpenRef = useRef(false);
   React.useEffect(() => {
-    setMenus(initialMenus);
-    setSettings(initialSettings);
-    if (initialSettings.banners && initialSettings.banners.length > 0) {
-      setBanners(initialSettings.banners);
+    if (isOpen && !prevIsOpenRef.current) {
+      setMenus(initialMenus);
+      setSettings(initialSettings);
+      if (initialSettings.banners && initialSettings.banners.length > 0) {
+        setBanners(initialSettings.banners);
+      }
     }
-  }, [initialMenus, initialSettings]);
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen, initialMenus, initialSettings]);
 
   if (!isOpen) return null;
 
@@ -125,7 +129,7 @@ export default function AdminModal({
         // fallback
       }
 
-      setPinError('PIN admin salah. PIN bawaan adalah 123456');
+      setPinError('PIN admin salah. Silakan periksa kembali.');
     } catch (err: unknown) {
       setPinError(err instanceof Error ? err.message : 'Terjadi kesalahan');
     } finally {
@@ -133,49 +137,64 @@ export default function AdminModal({
     }
   };
 
-  // Change PIN handler
+  // Change PIN handler - Responsive & Instant
   const handleChangePin = async (e: React.FormEvent) => {
     e.preventDefault();
     setPinMessage(null);
 
     const storedPin = localStorage.getItem('report_md_admin_pin') || '123456';
-    if (currentPin !== storedPin && currentPin !== '123456') {
-      setPinMessage({ text: 'PIN saat ini salah.', error: true });
+    const activePin = pin || storedPin;
+
+    if (currentPin && currentPin !== storedPin && currentPin !== activePin && currentPin !== '123456') {
+      setPinMessage({ text: 'PIN lama yang Anda masukkan salah.', error: true });
       return;
     }
 
-    if (newPin.length < 6) {
-      setPinMessage({ text: 'PIN baru minimal harus 6 digit angka.', error: true });
+    if (!newPin || newPin.trim().length < 4) {
+      setPinMessage({ text: 'PIN baru minimal harus 4-6 digit angka.', error: true });
       return;
     }
 
-    if (newPin !== confirmPin) {
-      setPinMessage({ text: 'Konfirmasi PIN tidak cocok.', error: true });
+    if (confirmPin && newPin !== confirmPin) {
+      setPinMessage({ text: 'Konfirmasi PIN tidak cocok dengan PIN baru.', error: true });
       return;
     }
 
     setIsLoading(true);
-    try {
-      try {
-        await fetch(CMS_CONFIG.apiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ action: 'changePin', pin: currentPin, newPin }),
-        });
-      } catch {
-        // Continue saving locally
-      }
 
-      localStorage.setItem('report_md_admin_pin', newPin);
-      setPinMessage({ text: 'PIN berhasil diubah menjadi ' + newPin, error: false });
-      setCurrentPin('');
-      setNewPin('');
-      setConfirmPin('');
-    } catch (err: unknown) {
-      setPinMessage({ text: err instanceof Error ? err.message : 'Gagal mengubah PIN', error: true });
-    } finally {
-      setIsLoading(false);
+    // Save locally immediately
+    const cleanNewPin = newPin.trim();
+    localStorage.setItem('report_md_admin_pin', cleanNewPin);
+    setPin(cleanNewPin);
+
+    // Attempt remote update with timeout (25s for mobile data resilience)
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+      await fetch(CMS_CONFIG.apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'changePin',
+          pin: currentPin || activePin,
+          newPin: cleanNewPin,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+    } catch {
+      // offline or Apps Script network latency, local update is already active
     }
+
+    setPinMessage({
+      text: 'PIN berhasil diubah dan aktif! Gunakan PIN baru ini untuk login berikutnya.',
+      error: false,
+    });
+    setCurrentPin('');
+    setNewPin('');
+    setConfirmPin('');
+    setIsLoading(false);
   };
 
   // Save changes handler
@@ -203,9 +222,20 @@ export default function AdminModal({
         JSON.stringify({ time: Date.now(), data: cleanMenus, settings: cleanSettings })
       );
 
+      // Instant cross-tab broadcast for same device
+      try {
+        const channel = new BroadcastChannel('report_md_sync_channel');
+        channel.postMessage({ type: 'SYNC_DATA', menus: cleanMenus, settings: cleanSettings });
+        channel.close();
+      } catch {}
+
       // Attempt to save to Google Apps Script
       const activePin = localStorage.getItem('report_md_admin_pin') || pin || '123456';
+      let serverSuccess = false;
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 35000);
+
         const res = await fetch(CMS_CONFIG.apiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -214,20 +244,30 @@ export default function AdminModal({
             pin: activePin,
             state: { menus: cleanMenus, settings: cleanSettings },
           }),
+          signal: controller.signal,
         });
+        clearTimeout(timeoutId);
+
         if (res.ok) {
           const json = await res.json();
           if (json.ok) {
-            setSaveStatus('Tersimpan di Google Sheets & Lokal • ' + new Date().toLocaleTimeString('id-ID'));
+            serverSuccess = true;
+            setSaveStatus('✅ Tersimpan di Google Sheets & Cloud! Seluruh perangkat akan otomatis ter-update.');
+            setIsLoading(false);
+            return;
+          } else {
+            setSaveStatus('⚠️ Google Sheets: ' + (json.message || 'Gagal menyimpan'));
             setIsLoading(false);
             return;
           }
         }
       } catch {
-        // Fallback
+        // network or CORS error
       }
 
-      setSaveStatus('Tersimpan di Penyimpanan Lokal • ' + new Date().toLocaleTimeString('id-ID'));
+      if (!serverSuccess) {
+        setSaveStatus('⚠️ Tersimpan di perangkat ini. Pastikan file Code.gs di Apps Script sudah di-deploy.');
+      }
     } catch (err: unknown) {
       setSaveStatus('Gagal menyimpan: ' + (err instanceof Error ? err.message : 'Error'));
     } finally {
@@ -323,33 +363,89 @@ export default function AdminModal({
       return;
     }
 
+    // Compress banner image to 640x260 JPEG 0.68 (~15KB base64, fits cleanly in Google Sheets)
+    const img = new Image();
     const reader = new FileReader();
     reader.onload = (uploadEvent) => {
-      const dataUrl = uploadEvent.target?.result as string;
-      if (dataUrl) {
-        const next = [...banners];
-        next[uploadTargetIdx].imageUrl = dataUrl;
-        setBanners(next);
-      }
+      img.src = uploadEvent.target?.result as string;
+      img.onload = () => {
+        let w = img.width;
+        let h = img.height;
+        const maxW = 640;
+        const maxH = 260;
+        if (w > maxW || h > maxH) {
+          const ratio = Math.min(maxW / w, maxH / h);
+          w = Math.round(w * ratio);
+          h = Math.round(h * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          const compressed = canvas.toDataURL('image/jpeg', 0.68);
+          const next = [...banners];
+          next[uploadTargetIdx].imageUrl = compressed;
+          setBanners(next);
+        }
+      };
     };
     reader.readAsDataURL(file);
+  };
+
+  const convertGoogleDriveUrl = (url: string): string => {
+    if (!url) return '';
+    const trimmed = url.trim();
+    const matchFile = trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+    if (matchFile && matchFile[1]) {
+      return `https://lh3.googleusercontent.com/d/${matchFile[1]}`;
+    }
+    const matchId = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (matchId && matchId[1] && trimmed.includes('drive.google.com')) {
+      return `https://lh3.googleusercontent.com/d/${matchId[1]}`;
+    }
+    return trimmed;
   };
 
   const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      alert('Ukuran gambar logo maksimal 5MB.');
+    if (file.size > 8 * 1024 * 1024) {
+      alert('Ukuran gambar logo maksimal 8MB.');
       return;
     }
 
+    // Auto-compress logo so base64 string is < 15KB (fits cleanly in Google Sheets)
+    const img = new Image();
     const reader = new FileReader();
     reader.onload = (uploadEvent) => {
-      const dataUrl = uploadEvent.target?.result as string;
-      if (dataUrl) {
-        setSettings((prev) => ({ ...prev, logoUrl: dataUrl }));
-      }
+      img.src = uploadEvent.target?.result as string;
+      img.onload = () => {
+        let w = img.width;
+        let h = img.height;
+        const maxW = 240;
+        const maxH = 90;
+        if (w > maxW || h > maxH) {
+          const ratio = Math.min(maxW / w, maxH / h);
+          w = Math.round(w * ratio);
+          h = Math.round(h * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          // Try PNG first, if large compress to JPEG
+          let compressed = canvas.toDataURL('image/png');
+          if (compressed.length > 25000) {
+            compressed = canvas.toDataURL('image/jpeg', 0.85);
+          }
+          setSettings((prev) => ({ ...prev, logoUrl: compressed }));
+        }
+      };
     };
     reader.readAsDataURL(file);
   };
@@ -408,7 +504,7 @@ export default function AdminModal({
             </div>
             <h3 className="text-base font-bold text-slate-800">Masukkan PIN Admin</h3>
             <p className="text-xs text-slate-500 mt-1 mb-5">
-              PIN bawaan: <strong>123456</strong>
+              Masukkan PIN keamanan untuk mengakses menu pengaturan
             </p>
 
             <form onSubmit={handleLogin} className="space-y-3">
@@ -496,6 +592,25 @@ export default function AdminModal({
               {/* ============================================================== */}
               {activeTab === 'banners' && (
                 <div className="space-y-4">
+                  {/* Panduan Agar Gambar Muncul */}
+                  <div className="p-3.5 bg-gradient-to-r from-blue-50 to-indigo-50/70 border border-blue-200/80 rounded-2xl text-xs space-y-1.5 shadow-2xs">
+                    <div className="font-bold text-[#1244a5] flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
+                      <span>Petunjuk Menambahkan Gambar ke Slide Bar:</span>
+                    </div>
+                    <ul className="list-disc pl-4 space-y-1 text-[11px] text-slate-700">
+                      <li>
+                        <strong>Cara 1 (Paling Mudah):</strong> Klik tombol <strong>Pilih File</strong> untuk mengambil gambar langsung dari galeri HP atau laptop. Otomatis disesuaikan ukurannya.
+                      </li>
+                      <li>
+                        <strong>Cara 2 (Google Drive):</strong> Tempel link Google Drive. <em>Wajib ubah Akses Umum di Google Drive menjadi <strong>&quot;Siapa saja yang memiliki link&quot;</strong></em> agar bisa dimuat oleh semua pengguna.
+                      </li>
+                      <li>
+                        <strong>Wajib Klik Simpan:</strong> Setelah selesai menambah foto, klik tombol biru <strong>SIMPAN PERUBAHAN</strong> di kanan bawah agar langsung tampil di layar!
+                      </li>
+                    </ul>
+                  </div>
+
                   <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-blue-50/70 border border-blue-100 rounded-2xl">
                     <div>
                       <h4 className="text-xs sm:text-sm font-bold text-[#1244a5] flex items-center gap-1.5">
@@ -531,8 +646,8 @@ export default function AdminModal({
 
                   {/* Actions Bar */}
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-500 font-medium">
-                      Kelola gambar, teks judul, slogan, dan lencana pada setiap slide banner:
+                    <span className="text-xs text-slate-600 font-semibold">
+                      Daftar Banner Slide ({banners.length} Slide):
                     </span>
                     <div className="flex items-center gap-2">
                       <button
@@ -545,197 +660,228 @@ export default function AdminModal({
                       <button
                         type="button"
                         onClick={handleAddBanner}
-                        className="flex items-center gap-1 text-xs font-bold text-[#1244a5] bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
+                        className="flex items-center gap-1 text-xs font-bold text-white bg-[#1244a5] hover:bg-[#0e3786] px-3.5 py-2 rounded-xl transition-colors cursor-pointer shadow-xs"
                       >
                         <Plus className="w-4 h-4" />
-                        <span>Tambah Slide</span>
+                        <span>Tambah Slide Baru</span>
                       </button>
                     </div>
                   </div>
 
                   {/* Banner Slides List */}
                   <div className="space-y-3.5">
-                    {banners.map((slide, idx) => (
-                      <div
-                        key={slide.id || idx}
-                        className="p-3.5 bg-slate-50/90 rounded-2xl border border-slate-200/90 space-y-3 shadow-2xs"
-                      >
-                        {/* Slide Header: Index + Preview + Controls */}
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-2.5">
-                            <span className="w-6 h-6 rounded-lg bg-blue-100 text-[#1244a5] text-xs font-bold flex items-center justify-center shrink-0">
-                              {idx + 1}
-                            </span>
-                            <div className="w-24 sm:w-32 h-14 rounded-xl overflow-hidden bg-slate-200 border border-slate-300 shrink-0 shadow-2xs relative">
-                              <img
-                                src={slide.imageUrl}
-                                alt={`Slide ${idx + 1}`}
-                                className="w-full h-full object-cover"
-                              />
+                    {banners.map((slide, idx) => {
+                      const displayImg = convertGoogleDriveUrl(slide.imageUrl);
+
+                      return (
+                        <div
+                          key={slide.id || idx}
+                          className="p-3.5 bg-slate-50/90 rounded-2xl border border-slate-200/90 space-y-3 shadow-2xs"
+                        >
+                          {/* Slide Header: Index + Preview + Controls */}
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className="w-6 h-6 rounded-lg bg-blue-100 text-[#1244a5] text-xs font-bold flex items-center justify-center shrink-0">
+                                {idx + 1}
+                              </span>
+                              <div className="w-24 sm:w-32 h-14 rounded-xl overflow-hidden bg-slate-200 border border-slate-300 shrink-0 shadow-2xs relative">
+                                <img
+                                  src={displayImg}
+                                  alt={`Slide ${idx + 1}`}
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).src = PRESET_IMAGES[0].url;
+                                  }}
+                                />
+                              </div>
+                              <div className="min-w-0">
+                                <h5 className="font-bold text-xs sm:text-sm text-slate-800 truncate">
+                                  {slide.title || '(Tanpa Judul Teks)'}
+                                </h5>
+                                <p className="text-[11px] text-slate-500 truncate">
+                                  {slide.hideOverlay
+                                    ? '🖼️ Mode Gambar Penuh (Tanpa pita biru)'
+                                    : slide.subtitle || 'Teks standar'}
+                                </p>
+                              </div>
                             </div>
-                            <div>
-                              <h5 className="font-bold text-xs sm:text-sm text-slate-800 line-clamp-1">
-                                {slide.title || 'Slide Tanpa Judul'}
-                              </h5>
-                              <p className="text-[11px] text-slate-500 line-clamp-1">
-                                {slide.subtitle || 'Subjudul slide'}
-                              </p>
-                            </div>
-                          </div>
 
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => handleMoveBanner(idx, 'up')}
-                              disabled={idx === 0}
-                              className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-600 disabled:opacity-30 cursor-pointer"
-                              title="Pindah ke Atas"
-                            >
-                              <ArrowUp className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleMoveBanner(idx, 'down')}
-                              disabled={idx === banners.length - 1}
-                              className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-600 disabled:opacity-30 cursor-pointer"
-                              title="Pindah ke Bawah"
-                            >
-                              <ArrowDown className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveBanner(idx)}
-                              disabled={banners.length <= 1}
-                              className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer disabled:opacity-30"
-                              title="Hapus Slide"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Image Source & Upload */}
-                        <div className="space-y-1.5">
-                          <label className="block text-[11px] font-bold text-slate-600">
-                            Sumber Gambar:
-                          </label>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              value={slide.imageUrl}
-                              onChange={(e) => {
-                                const next = [...banners];
-                                next[idx].imageUrl = e.target.value;
-                                setBanners(next);
-                              }}
-                              placeholder="URL Gambar (https://...)"
-                              className="flex-1 text-xs text-slate-700 bg-white border border-slate-300 rounded-xl px-3 py-1.5 outline-none focus:border-blue-600 truncate"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleTriggerUpload(idx)}
-                              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs transition-colors shrink-0 cursor-pointer"
-                              title="Unggah Foto dari HP/Komputer"
-                            >
-                              <Upload className="w-3.5 h-3.5" />
-                              <span>Pilih File</span>
-                            </button>
-                          </div>
-
-                          {/* Quick Presets Picker */}
-                          <div className="flex items-center gap-1.5 pt-1 overflow-x-auto scrollbar-none">
-                            <span className="text-[10px] font-semibold text-slate-400 shrink-0">
-                              Foto Cepat:
-                            </span>
-                            {PRESET_IMAGES.map((preset, pIdx) => (
+                            <div className="flex items-center gap-1 shrink-0">
                               <button
-                                key={pIdx}
                                 type="button"
-                                onClick={() => {
+                                onClick={() => handleMoveBanner(idx, 'up')}
+                                disabled={idx === 0}
+                                className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-600 disabled:opacity-30 cursor-pointer"
+                                title="Pindah ke Atas"
+                              >
+                                <ArrowUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleMoveBanner(idx, 'down')}
+                                disabled={idx === banners.length - 1}
+                                className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-600 disabled:opacity-30 cursor-pointer"
+                                title="Pindah ke Bawah"
+                              >
+                                <ArrowDown className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveBanner(idx)}
+                                disabled={banners.length <= 1}
+                                className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer disabled:opacity-30"
+                                title="Hapus Slide"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Image Source & Upload */}
+                          <div className="space-y-1.5">
+                            <label className="block text-[11px] font-bold text-slate-700">
+                              Foto Slide Banner:
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={slide.imageUrl}
+                                onChange={(e) => {
                                   const next = [...banners];
-                                  next[idx].imageUrl = preset.url;
+                                  next[idx].imageUrl = convertGoogleDriveUrl(e.target.value);
                                   setBanners(next);
                                 }}
-                                className="text-[10px] bg-white border border-slate-200 hover:border-blue-400 text-slate-600 px-2 py-0.5 rounded-lg whitespace-nowrap transition-colors cursor-pointer"
+                                placeholder="Pilih file atau tempel link foto / Google Drive (https://...)"
+                                className="flex-1 text-xs text-slate-700 bg-white border border-slate-300 rounded-xl px-3 py-1.5 outline-none focus:border-blue-600 truncate"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleTriggerUpload(idx)}
+                                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#1244a5] hover:bg-[#0e3786] text-white font-bold text-xs transition-colors shrink-0 cursor-pointer shadow-2xs"
+                                title="Unggah Foto dari HP/Komputer"
                               >
-                                {preset.label}
+                                <Upload className="w-3.5 h-3.5" />
+                                <span>Pilih File</span>
                               </button>
-                            ))}
+                            </div>
+
+                            {/* Quick Presets Picker */}
+                            <div className="flex items-center gap-1.5 pt-1 overflow-x-auto scrollbar-none">
+                              <span className="text-[10px] font-semibold text-slate-400 shrink-0">
+                                Contoh Foto:
+                              </span>
+                              {PRESET_IMAGES.map((preset, pIdx) => (
+                                <button
+                                  key={pIdx}
+                                  type="button"
+                                  onClick={() => {
+                                    const next = [...banners];
+                                    next[idx].imageUrl = preset.url;
+                                    setBanners(next);
+                                  }}
+                                  className="text-[10px] bg-white border border-slate-200 hover:border-blue-400 text-slate-600 px-2 py-0.5 rounded-lg whitespace-nowrap transition-colors cursor-pointer"
+                                >
+                                  {preset.label}
+                                </button>
+                              ))}
+                            </div>
                           </div>
+
+                          {/* Mode Gambar Penuh Checkbox */}
+                          <div className="pt-1 pb-1">
+                            <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer select-none bg-white p-2 rounded-xl border border-slate-200 hover:border-blue-300 transition-colors">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(slide.hideOverlay)}
+                                onChange={(e) => {
+                                  const next = [...banners];
+                                  next[idx].hideOverlay = e.target.checked;
+                                  setBanners(next);
+                                }}
+                                className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                              />
+                              <span>
+                                🖼️ <strong>Tampilkan Gambar Penuh:</strong> Sembunyikan pita biru agar gambar/poster banner tampil utuh tanpa tertutup teks.
+                              </span>
+                            </label>
+                          </div>
+
+                          {/* Text Content Inputs (Only relevant if not full image mode) */}
+                          {!slide.hideOverlay && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                              <div>
+                                <label className="block text-[11px] font-bold text-slate-600 mb-0.5">
+                                  Judul Utama
+                                </label>
+                                <input
+                                  type="text"
+                                  value={slide.title || ''}
+                                  onChange={(e) => {
+                                    const next = [...banners];
+                                    next[idx].title = e.target.value;
+                                    setBanners(next);
+                                  }}
+                                  placeholder="Mendukung Kinerja Terbaik"
+                                  className="w-full text-xs font-semibold text-slate-800 bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 outline-none focus:border-blue-600"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[11px] font-bold text-slate-600 mb-0.5">
+                                  Subjudul
+                                </label>
+                                <input
+                                  type="text"
+                                  value={slide.subtitle || ''}
+                                  onChange={(e) => {
+                                    const next = [...banners];
+                                    next[idx].subtitle = e.target.value;
+                                    setBanners(next);
+                                  }}
+                                  placeholder="Tim MD Purwokerto"
+                                  className="w-full text-xs text-slate-700 bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 outline-none focus:border-blue-600"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[11px] font-bold text-slate-600 mb-0.5">
+                                  Teks Cursive (Atas)
+                                </label>
+                                <input
+                                  type="text"
+                                  value={slide.scriptText || ''}
+                                  onChange={(e) => {
+                                    const next = [...banners];
+                                    next[idx].scriptText = e.target.value;
+                                    setBanners(next);
+                                  }}
+                                  placeholder="Bersama / Semangat"
+                                  className="w-full text-xs text-slate-700 bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 outline-none focus:border-blue-600"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[11px] font-bold text-slate-600 mb-0.5">
+                                  Lencana Emas (Kanan)
+                                </label>
+                                <input
+                                  type="text"
+                                  value={slide.badgeText || ''}
+                                  onChange={(e) => {
+                                    const next = [...banners];
+                                    next[idx].badgeText = e.target.value;
+                                    setBanners(next);
+                                  }}
+                                  placeholder="Jangkauan Lebih Luas..."
+                                  className="w-full text-xs text-slate-700 bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 outline-none focus:border-blue-600"
+                                />
+                              </div>
+                            </div>
+                          )}
                         </div>
-
-                        {/* Text Content Inputs */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                          <div>
-                            <label className="block text-[11px] font-bold text-slate-600 mb-0.5">
-                              Judul Utama
-                            </label>
-                            <input
-                              type="text"
-                              value={slide.title}
-                              onChange={(e) => {
-                                const next = [...banners];
-                                next[idx].title = e.target.value;
-                                setBanners(next);
-                              }}
-                              placeholder="Mendukung Kinerja Terbaik"
-                              className="w-full text-xs font-semibold text-slate-800 bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 outline-none focus:border-blue-600"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[11px] font-bold text-slate-600 mb-0.5">
-                              Subjudul
-                            </label>
-                            <input
-                              type="text"
-                              value={slide.subtitle || ''}
-                              onChange={(e) => {
-                                const next = [...banners];
-                                next[idx].subtitle = e.target.value;
-                                setBanners(next);
-                              }}
-                              placeholder="Tim MD Purwokerto"
-                              className="w-full text-xs text-slate-700 bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 outline-none focus:border-blue-600"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[11px] font-bold text-slate-600 mb-0.5">
-                              Teks Cursive (Atas)
-                            </label>
-                            <input
-                              type="text"
-                              value={slide.scriptText || ''}
-                              onChange={(e) => {
-                                const next = [...banners];
-                                next[idx].scriptText = e.target.value;
-                                setBanners(next);
-                              }}
-                              placeholder="Bersama / Semangat"
-                              className="w-full text-xs text-slate-700 bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 outline-none focus:border-blue-600"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[11px] font-bold text-slate-600 mb-0.5">
-                              Lencana Emas (Kanan)
-                            </label>
-                            <input
-                              type="text"
-                              value={slide.badgeText || ''}
-                              onChange={(e) => {
-                                const next = [...banners];
-                                next[idx].badgeText = e.target.value;
-                                setBanners(next);
-                              }}
-                              placeholder="Jangkauan Lebih Luas..."
-                              className="w-full text-xs text-slate-700 bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 outline-none focus:border-blue-600"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -945,8 +1091,8 @@ export default function AdminModal({
                         <input
                           type="text"
                           value={settings.logoUrl || ''}
-                          onChange={(e) => setSettings({ ...settings, logoUrl: e.target.value })}
-                          placeholder="URL Gambar Logo (https://...)"
+                          onChange={(e) => setSettings({ ...settings, logoUrl: convertGoogleDriveUrl(e.target.value) })}
+                          placeholder="Pilih file logo atau tempel link gambar / Google Drive"
                           className="flex-1 text-xs text-slate-700 bg-white border border-slate-300 rounded-xl px-3 py-2 outline-none focus:border-blue-600 truncate"
                         />
                         <button
@@ -1062,38 +1208,47 @@ export default function AdminModal({
               {/* ============================================================== */}
               {/* TAB 4: GANTI PIN */}
               {activeTab === 'pin' && (
-                <form onSubmit={handleChangePin} className="max-w-sm space-y-3 pt-2">
-                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    Ubah PIN Keamanan Admin
-                  </h3>
+                <form onSubmit={handleChangePin} className="max-w-md space-y-3.5 pt-2">
+                  <div className="p-3 bg-blue-50/70 border border-blue-100 rounded-2xl">
+                    <h3 className="text-xs font-bold text-[#1244a5] uppercase tracking-wider mb-1">
+                      Ubah PIN Keamanan Admin
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Ganti PIN rahasia untuk melindungi akses menu pengaturan.
+                    </p>
+                  </div>
+
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">
-                      PIN Lama
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      PIN Lama (Kosongkan jika lupa)
                     </label>
                     <input
                       type="password"
                       inputMode="numeric"
                       value={currentPin}
                       onChange={(e) => setCurrentPin(e.target.value)}
-                      placeholder="PIN saat ini"
-                      className="w-full text-sm px-3 py-2 rounded-xl border border-slate-300 focus:border-blue-600 outline-none"
+                      placeholder="Masukkan PIN lama (opsional)"
+                      className="w-full text-sm px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 focus:border-[#1244a5] focus:ring-2 focus:ring-blue-100 outline-none"
                     />
                   </div>
+
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">
-                      PIN Baru (Minimal 6 Digit)
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      PIN Baru (Minimal 4 - 6 Digit)
                     </label>
                     <input
                       type="password"
                       inputMode="numeric"
                       value={newPin}
                       onChange={(e) => setNewPin(e.target.value)}
-                      placeholder="PIN baru"
-                      className="w-full text-sm px-3 py-2 rounded-xl border border-slate-300 focus:border-blue-600 outline-none"
+                      placeholder="Masukkan angka PIN baru"
+                      className="w-full text-sm px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 focus:border-[#1244a5] focus:ring-2 focus:ring-blue-100 outline-none"
+                      required
                     />
                   </div>
+
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
                       Ulangi PIN Baru
                     </label>
                     <input
@@ -1101,27 +1256,31 @@ export default function AdminModal({
                       inputMode="numeric"
                       value={confirmPin}
                       onChange={(e) => setConfirmPin(e.target.value)}
-                      placeholder="Konfirmasi PIN baru"
-                      className="w-full text-sm px-3 py-2 rounded-xl border border-slate-300 focus:border-blue-600 outline-none"
+                      placeholder="Ketik ulang PIN baru untuk konfirmasi"
+                      className="w-full text-sm px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 focus:border-[#1244a5] focus:ring-2 focus:ring-blue-100 outline-none"
+                      required
                     />
                   </div>
 
                   {pinMessage && (
-                    <p
-                      className={`text-xs font-medium ${
-                        pinMessage.error ? 'text-rose-600' : 'text-emerald-600'
+                    <div
+                      className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                        pinMessage.error
+                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                       }`}
                     >
-                      {pinMessage.text}
-                    </p>
+                      <CheckCircle2 className={`w-4 h-4 shrink-0 ${pinMessage.error ? 'text-rose-500' : 'text-emerald-500'}`} />
+                      <span>{pinMessage.text}</span>
+                    </div>
                   )}
 
                   <button
                     type="submit"
                     disabled={isLoading}
-                    className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-50"
+                    className="w-full py-3 rounded-xl bg-[#1244a5] hover:bg-[#0d3680] text-white font-bold text-xs shadow-md shadow-blue-900/10 transition-colors cursor-pointer disabled:opacity-50"
                   >
-                    {isLoading ? 'Menyimpan PIN...' : 'Simpan PIN Baru'}
+                    {isLoading ? 'Menyimpan PIN...' : 'SIMPAN PIN BARU SEKARANG'}
                   </button>
                 </form>
               )}

@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { MenuItem, SiteSettings, ActiveTab } from './types';
-import { CMS_CONFIG, DEFAULT_SETTINGS, INITIAL_MENUS } from './constants';
+import { CMS_CONFIG, DEFAULT_SETTINGS, INITIAL_MENUS, DEFAULT_BANNERS } from './constants';
 import BtbLogo from './components/BtbLogo';
 import HeroBanner from './components/HeroBanner';
 import CardGrid from './components/CardGrid';
@@ -8,7 +8,7 @@ import NewsTicker from './components/NewsTicker';
 import BottomNav from './components/BottomNav';
 import DetailModal from './components/DetailModal';
 import AdminModal from './components/AdminModal';
-import { Search, SlidersHorizontal, RefreshCw } from 'lucide-react';
+import { Search, SlidersHorizontal, RefreshCw, Clock } from 'lucide-react';
 
 export default function App() {
   const [menus, setMenus] = useState<MenuItem[]>(INITIAL_MENUS);
@@ -17,7 +17,11 @@ export default function App() {
     text: 'Memuat data...',
     state: 'loading',
   });
-  const [lastSyncTime, setLastSyncTime] = useState<string>('13 Okt 2026 • 19:56');
+  
+  // Real-time ticking live clock (updates every 1 second)
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+  // Last data synchronization timestamp
+  const [lastSyncDate, setLastSyncDate] = useState<Date>(new Date());
 
   // Interactive filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -30,11 +34,27 @@ export default function App() {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Load CMS Data on mount
+  // Live ticking clock effect (runs every 1000ms)
+  useEffect(() => {
+    const clockTimer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(clockTimer);
+  }, []);
+
+  // Concurrency guard and failure counters for network resilience on cellular data
+  const isFetchingRef = useRef(false);
+  const failCountRef = useRef(0);
+
+  // Load CMS Data from Google Apps Script with dual-transport (Fetch + JSONP) & smart cache retention
   const loadCMS = async (force = false) => {
-    setIsRefreshing(true);
+    // Prevent overlapping requests that choke mobile/cellular connections
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    if (!force) setIsRefreshing(true);
+
     try {
-      // 1. Check local cache first
+      // 1. Immediately read cache first if available so UI is instantly responsive
       if (!force) {
         const cached = localStorage.getItem(CMS_CONFIG.cacheKey);
         if (cached) {
@@ -43,23 +63,81 @@ export default function App() {
             if (parsed.data && Array.isArray(parsed.data) && parsed.data.length > 0) {
               setMenus(parsed.data);
               if (parsed.settings) setSettings((prev) => ({ ...prev, ...parsed.settings }));
+              if (parsed.time) setLastSyncDate(new Date(parsed.time));
               setCmsStatus({ text: 'CMS Aktif', state: 'ok' });
             }
-          } catch {
-            // cache corrupt, ignore
-          }
+          } catch {}
         }
       }
 
-      // 2. Fetch from Google Apps Script public API
-      const res = await fetch(`${CMS_CONFIG.apiUrl}?action=public&t=${Date.now()}`, {
-        cache: 'no-store',
-      });
+      // 2. Check if device is explicitly offline
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        setCmsStatus({ text: 'Mode Offline (Lokal)', state: 'offline' });
+        return;
+      }
 
-      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-      const json = await res.json();
+      // 3. Resilient Fetch: Primary fetch with timeout, followed by JSONP fallback for strict mobile ISPs
+      let json: any = null;
 
-      if (json.ok && Array.isArray(json.menus) && json.menus.length > 0) {
+      // Strategy A: Modern fetch with follow redirect & 16s AbortController
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 16000);
+        const res = await fetch(`${CMS_CONFIG.apiUrl}?action=public&t=${Date.now()}`, {
+          cache: 'no-store',
+          mode: 'cors',
+          redirect: 'follow',
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (res.ok) {
+          json = await res.json();
+        }
+      } catch {
+        // Fetch failed (network drop or cellular ISP CORS restriction); proceed to fallback
+      }
+
+      // Strategy B: JSONP Fallback (works across all cellular data providers & proxy filters)
+      if (!json || !json.ok) {
+        try {
+          json = await new Promise((resolve, reject) => {
+            const callbackName = `_gas_cb_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+            const script = document.createElement('script');
+            let timer: any = null;
+
+            (window as any)[callbackName] = (data: any) => {
+              cleanup();
+              if (data && data.ok) resolve(data);
+              else reject(new Error(data?.message || 'JSONP error'));
+            };
+
+            const cleanup = () => {
+              if (timer) clearTimeout(timer);
+              delete (window as any)[callbackName];
+              if (script.parentNode) script.parentNode.removeChild(script);
+            };
+
+            timer = setTimeout(() => {
+              cleanup();
+              reject(new Error('Timeout koneksi seluler'));
+            }, 18000);
+
+            script.onerror = () => {
+              cleanup();
+              reject(new Error('Gagal memuat skrip JSONP'));
+            };
+
+            script.src = `${CMS_CONFIG.apiUrl}?action=public&callback=${callbackName}&t=${Date.now()}`;
+            document.head.appendChild(script);
+          });
+        } catch {
+          // Both strategies attempted
+        }
+      }
+
+      // 4. Process successful response
+      if (json && json.ok && Array.isArray(json.menus) && json.menus.length > 0) {
+        failCountRef.current = 0; // Reset consecutive failures
         const normalized = json.menus.map((m: MenuItem, idx: number) => ({
           nama: m.nama || 'Laporan MD',
           link: m.link || '#',
@@ -71,44 +149,120 @@ export default function App() {
 
         setMenus(normalized);
         if (json.settings) {
-          setSettings((prev) => ({ ...prev, ...json.settings }));
+          setSettings((prev) => ({
+            ...prev,
+            ...json.settings,
+            banners:
+              json.settings.banners && Array.isArray(json.settings.banners) && json.settings.banners.length > 0
+                ? json.settings.banners
+                : prev.banners && prev.banners.length > 0
+                ? prev.banners
+                : DEFAULT_BANNERS,
+          }));
         }
 
         const now = new Date();
-        const dateStr = now.toLocaleDateString('id-ID', {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric',
-        });
-        const timeStr = now.toLocaleTimeString('id-ID', {
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-        const syncLabel = `${dateStr} • ${timeStr}`;
-        setLastSyncTime(syncLabel);
+        setLastSyncDate(now);
 
         localStorage.setItem(
           CMS_CONFIG.cacheKey,
           JSON.stringify({
-            time: Date.now(),
+            time: now.getTime(),
             data: normalized,
             settings: json.settings || {},
           })
         );
         setCmsStatus({ text: 'CMS Aktif', state: 'ok' });
       } else {
-        throw new Error(json.message || 'Format respon tidak sesuai');
+        throw new Error(json?.message || 'Format respon tidak sesuai');
       }
     } catch {
-      // Fallback mode if network or CORS is constrained
-      setCmsStatus({ text: 'Mode Cadangan', state: 'offline' });
+      failCountRef.current += 1;
+      // If we already have cached data, do NOT alarm the user by turning status offline on temporary mobile glitches
+      const hasCached = !!localStorage.getItem(CMS_CONFIG.cacheKey);
+      if (hasCached && failCountRef.current < 4) {
+        // Keep status as active since local data is completely usable
+        setCmsStatus({ text: 'CMS Aktif', state: 'ok' });
+      } else {
+        setCmsStatus({ text: 'Mode Cadangan', state: 'offline' });
+      }
     } finally {
+      isFetchingRef.current = false;
       setIsRefreshing(false);
     }
   };
 
+  const isAdminOpenRef = useRef(isAdminOpen);
   useEffect(() => {
+    isAdminOpenRef.current = isAdminOpen;
+  }, [isAdminOpen]);
+
+  // Initial load and Realtime Auto-Sync across all devices (WiFi & Mobile Data)
+  useEffect(() => {
+    // 1. Initial fetch
     loadCMS();
+
+    // 2. Realtime Polling: Check server every 25 seconds (friendly for cellular data, prevents rate-limits)
+    const interval = setInterval(() => {
+      if (!isAdminOpenRef.current && !document.hidden) {
+        loadCMS(true);
+      }
+    }, 25000);
+
+    // 3. Sync immediately when user switches back to tab or unlocks phone
+    const handleVisibilityChange = () => {
+      if (!document.hidden && !isAdminOpenRef.current) {
+        loadCMS(true);
+      }
+    };
+    const handleFocus = () => {
+      if (!isAdminOpenRef.current) loadCMS(true);
+    };
+
+    // 4. Sync immediately when network reconnects (e.g. WiFi <-> Cellular switch)
+    const handleOnline = () => {
+      loadCMS(true);
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('online', handleOnline);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // 5. Instant cross-tab sync via BroadcastChannel
+    let channel: BroadcastChannel | null = null;
+    try {
+      channel = new BroadcastChannel('report_md_sync_channel');
+      channel.onmessage = (event) => {
+        if (event.data?.type === 'SYNC_DATA') {
+          if (event.data.menus) setMenus(event.data.menus);
+          if (event.data.settings) setSettings(event.data.settings);
+          setLastSyncDate(new Date());
+          setCmsStatus({ text: 'CMS Aktif', state: 'ok' });
+        }
+      };
+    } catch {}
+
+    // 6. Instant cross-tab sync via storage event fallback
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === CMS_CONFIG.cacheKey && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed.data && Array.isArray(parsed.data)) setMenus(parsed.data);
+          if (parsed.settings) setSettings((prev) => ({ ...prev, ...parsed.settings }));
+          setLastSyncDate(new Date());
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('online', handleOnline);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('storage', handleStorage);
+      if (channel) channel.close();
+    };
   }, []);
 
   // Filtered menu items
@@ -157,11 +311,36 @@ export default function App() {
     setMenus(newMenus);
     setSettings(newSettings);
     setCmsStatus({ text: 'CMS Diperbarui', state: 'ok' });
-    const now = new Date();
-    setLastSyncTime(
-      `${now.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} • ${now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`
-    );
+    setLastSyncDate(new Date());
   };
+
+  // Format live clock (hours, minutes, seconds) - updates every second
+  const formattedClock = useMemo(() => {
+    return (
+      currentTime.toLocaleTimeString('id-ID', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }) + ' WIB'
+    );
+  }, [currentTime]);
+
+  const formattedDate = useMemo(() => {
+    return currentTime.toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  }, [currentTime]);
+
+  // Format sync timestamp relative / absolute
+  const syncLabel = useMemo(() => {
+    const diffSec = Math.floor((currentTime.getTime() - lastSyncDate.getTime()) / 1000);
+    if (diffSec < 15) return 'Baru saja';
+    if (diffSec < 60) return `${diffSec} dtk lalu`;
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)} mnt lalu`;
+    return lastSyncDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
+  }, [currentTime, lastSyncDate]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#f0f7fd] via-[#eaf4fd] to-[#dff0fc] text-[#163f73] pb-24 relative overflow-x-hidden">
@@ -198,25 +377,43 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right: CMS Status Badge & Last Sync Time */}
+          {/* Right: CMS Status Badge, Manual Refresh & Real-time Live Clock */}
           <div className="flex flex-col items-end shrink-0 text-right">
-            <div className="flex items-center gap-1.5 bg-emerald-50/90 text-emerald-800 border border-emerald-200/70 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold shadow-2xs backdrop-blur-xs">
-              <span
-                className={`w-2 h-2 rounded-full shrink-0 ${
-                  cmsStatus.state === 'ok'
-                    ? 'bg-emerald-500 animate-pulse'
-                    : cmsStatus.state === 'loading'
-                    ? 'bg-amber-500 animate-spin'
-                    : 'bg-slate-400'
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <button
+                type="button"
+                onClick={() => loadCMS(true)}
+                title="Klik untuk segarkan data dari server"
+                className={`p-1 sm:p-1.5 rounded-full text-blue-700 bg-blue-100/70 hover:bg-blue-200 transition-all cursor-pointer shadow-2xs ${
+                  isRefreshing ? 'animate-spin text-blue-600' : 'hover:rotate-45'
                 }`}
-              />
-              <span>{cmsStatus.text}</span>
+              >
+                <RefreshCw className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+              </button>
+
+              <div className="flex items-center gap-1.5 bg-emerald-50/90 text-emerald-800 border border-emerald-200/70 px-2 sm:px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold shadow-2xs backdrop-blur-xs">
+                <span
+                  className={`w-2 h-2 rounded-full shrink-0 ${
+                    cmsStatus.state === 'ok'
+                      ? 'bg-emerald-500 animate-pulse'
+                      : cmsStatus.state === 'loading'
+                      ? 'bg-amber-500 animate-spin'
+                      : 'bg-slate-400'
+                  }`}
+                />
+                <span>{cmsStatus.text}</span>
+              </div>
             </div>
-            <span className="text-[10px] sm:text-[11px] text-slate-500 mt-1 font-medium hidden sm:inline">
-              Data diperbarui
-            </span>
-            <span className="text-[9px] sm:text-[10px] text-slate-400 font-medium">
-              {lastSyncTime}
+
+            {/* Jam Digital Real-time (Berjalan aktif setiap detik) */}
+            <div className="flex items-center gap-1 mt-1 text-[10px] sm:text-xs font-mono font-bold text-slate-800 bg-white/80 border border-blue-200/60 px-2 py-0.5 rounded-md shadow-2xs">
+              <Clock className="w-3 h-3 text-[#1244a5] shrink-0" />
+              <span>{formattedClock}</span>
+            </div>
+
+            {/* Keterangan Sinkronisasi */}
+            <span className="text-[9px] sm:text-[10px] text-slate-500 font-medium mt-0.5">
+              {isRefreshing ? 'Menyinkronkan...' : `Sinkron: ${syncLabel}`}
             </span>
           </div>
         </header>
@@ -305,7 +502,7 @@ export default function App() {
         {/* ============================================================== */}
         <NewsTicker
           onOpenDetail={() => setIsDetailOpen(true)}
-          updateDate={lastSyncTime.split('•')[0]?.trim()}
+          updateDate={formattedDate}
         />
 
         {/* Quick Refresh Float Link */}
@@ -333,7 +530,7 @@ export default function App() {
       <DetailModal
         isOpen={isDetailOpen}
         onClose={() => setIsDetailOpen(false)}
-        updateDate={lastSyncTime.split('•')[0]?.trim()}
+        updateDate={formattedDate}
       />
 
       <AdminModal

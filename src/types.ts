@@ -6,6 +6,7 @@ export interface BannerSlide {
   subtitle?: string;
   badgeText?: string;
   linkUrl?: string;
+  hideOverlay?: boolean;
 }
 
 export interface MenuItem {
