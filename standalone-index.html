@@ -891,15 +891,55 @@
       document.getElementById("adminModal").classList.add("hidden");
     };
 
-    document.getElementById("loginBtn").onclick = () => {
-      const pin = document.getElementById("pinInput").value;
-      const stored = localStorage.getItem("report_md_admin_pin") || "123456";
-      if (pin === stored || pin === "123456") {
+    document.getElementById("loginBtn").onclick = async () => {
+      const pin = document.getElementById("pinInput").value.trim();
+      const err = document.getElementById("pinError");
+      err.classList.add("hidden");
+
+      if (!pin) {
+        err.textContent = "Masukkan PIN admin.";
+        err.classList.remove("hidden");
+        return;
+      }
+
+      const stored = localStorage.getItem("report_md_admin_pin");
+
+      // 1. Coba verifikasi remote ke Google Apps Script jika terhubung
+      let remoteChecked = false;
+      try {
+        const res = await fetch(CMS_CONFIG.apiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action: "getState", pin: pin })
+        });
+        if (res.ok) {
+          const json = await res.json();
+          remoteChecked = true;
+          if (json.ok && json.data) {
+            localStorage.setItem("report_md_admin_pin", pin);
+            document.getElementById("adminLoginView").classList.add("hidden");
+            document.getElementById("adminPanelView").classList.remove("hidden");
+            if (json.data.menus) state.menus = json.data.menus;
+            if (json.data.settings) state.settings = json.data.settings;
+            populateAdminPanel();
+            return;
+          } else {
+            err.textContent = json.message || "PIN admin salah. Silakan periksa kembali.";
+            err.classList.remove("hidden");
+            return;
+          }
+        }
+      } catch (e) {
+        // Offline / jaringan seluler lambat
+      }
+
+      // 2. Jika offline / server tidak dapat dihubungi:
+      const validLocalPin = stored || "123456";
+      if (!remoteChecked && pin === validLocalPin) {
         document.getElementById("adminLoginView").classList.add("hidden");
         document.getElementById("adminPanelView").classList.remove("hidden");
         populateAdminPanel();
       } else {
-        const err = document.getElementById("pinError");
         err.textContent = "PIN salah. Silakan periksa kembali.";
         err.classList.remove("hidden");
       }
@@ -1148,7 +1188,7 @@
       const msg = document.getElementById("pinMsg");
       const stored = localStorage.getItem("report_md_admin_pin") || "123456";
 
-      if (oldPin && oldPin !== stored && oldPin !== "123456") {
+      if (oldPin && oldPin !== stored) {
         msg.textContent = "PIN lama yang Anda masukkan salah.";
         msg.className = "text-xs font-semibold text-rose-600 block p-2 bg-rose-50 rounded-lg mt-2";
         msg.classList.remove("hidden");
@@ -1162,13 +1202,13 @@
       }
 
       localStorage.setItem("report_md_admin_pin", newPin);
-      msg.textContent = "PIN berhasil diubah dan aktif!";
+      msg.textContent = "PIN berhasil diubah dan aktif! PIN bawaan tidak dapat digunakan lagi.";
       msg.className = "text-xs font-semibold text-emerald-600 block p-2 bg-emerald-50 rounded-lg mt-2";
       msg.classList.remove("hidden");
       document.getElementById("oldPinInput").value = "";
       document.getElementById("newPinInput").value = "";
 
-      // Try background update to Apps Script
+      // Kirim pembaruan ke Google Apps Script
       try {
         await fetch(CMS_CONFIG.apiUrl, {
           method: "POST",

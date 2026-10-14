@@ -94,25 +94,33 @@ export default function AdminModal({
     setPinError('');
     setIsLoading(true);
 
+    const cleanPin = pin.trim();
+    if (!cleanPin) {
+      setPinError('Masukkan PIN admin.');
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      const storedPin = localStorage.getItem('report_md_admin_pin') || '123456';
+      const storedPin = localStorage.getItem('report_md_admin_pin');
 
-      // Verify locally or with Apps Script
-      if (pin === storedPin || pin === '123456') {
-        setIsAuthenticated(true);
-        setIsLoading(false);
-        return;
-      }
-
-      // Try remote verification
+      // 1. Coba verifikasi remote ke Google Apps Script terlebih dahulu jika terhubung
+      let remoteChecked = false;
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
         const res = await fetch(CMS_CONFIG.apiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ action: 'getState', pin }),
+          body: JSON.stringify({ action: 'getState', pin: cleanPin }),
+          signal: controller.signal,
         });
+        clearTimeout(timeoutId);
+
         if (res.ok) {
           const json = await res.json();
+          remoteChecked = true;
           if (json.ok && json.data) {
             setIsAuthenticated(true);
             if (json.data.menus) setMenus(json.data.menus);
@@ -120,13 +128,28 @@ export default function AdminModal({
               setSettings(json.data.settings);
               if (json.data.settings.banners) setBanners(json.data.settings.banners);
             }
-            localStorage.setItem('report_md_admin_pin', pin);
+            // Simpan PIN yang valid ke localStorage perangkat ini
+            localStorage.setItem('report_md_admin_pin', cleanPin);
+            setIsLoading(false);
+            return;
+          } else {
+            // Google Apps Script secara eksplisit menolak PIN
+            setPinError(json.message || 'PIN admin salah. Silakan periksa kembali.');
             setIsLoading(false);
             return;
           }
         }
       } catch {
-        // fallback
+        // Mode offline / jaringan lambat
+      }
+
+      // 2. Jika offline / server tidak dapat dihubungi:
+      // Hanya izinkan PIN yang tersimpan di perangkat ini (atau PIN bawaan jika BELUM pernah diganti)
+      const validLocalPin = storedPin || '123456';
+      if (!remoteChecked && cleanPin === validLocalPin) {
+        setIsAuthenticated(true);
+        setIsLoading(false);
+        return;
       }
 
       setPinError('PIN admin salah. Silakan periksa kembali.');
@@ -143,54 +166,79 @@ export default function AdminModal({
     setPinMessage(null);
 
     const storedPin = localStorage.getItem('report_md_admin_pin') || '123456';
-    const activePin = pin || storedPin;
+    const activePin = pin.trim() || storedPin;
 
-    if (currentPin && currentPin !== storedPin && currentPin !== activePin && currentPin !== '123456') {
+    const cleanCurrent = currentPin.trim();
+    if (cleanCurrent && cleanCurrent !== activePin && cleanCurrent !== storedPin) {
       setPinMessage({ text: 'PIN lama yang Anda masukkan salah.', error: true });
       return;
     }
 
-    if (!newPin || newPin.trim().length < 4) {
+    const cleanNewPin = newPin.trim();
+    if (!cleanNewPin || cleanNewPin.length < 4) {
       setPinMessage({ text: 'PIN baru minimal harus 4-6 digit angka.', error: true });
       return;
     }
 
-    if (confirmPin && newPin !== confirmPin) {
+    if (confirmPin && cleanNewPin !== confirmPin.trim()) {
       setPinMessage({ text: 'Konfirmasi PIN tidak cocok dengan PIN baru.', error: true });
       return;
     }
 
     setIsLoading(true);
 
-    // Save locally immediately
-    const cleanNewPin = newPin.trim();
+    // Langsung simpan di localStorage agar PIN baru aktif seketika di perangkat ini
     localStorage.setItem('report_md_admin_pin', cleanNewPin);
     setPin(cleanNewPin);
 
-    // Attempt remote update with timeout (25s for mobile data resilience)
+    // Kirim pembaruan ke Google Apps Script (25s timeout untuk jaringan seluler)
+    let remoteSaved = false;
+    let serverErrorMsg = '';
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 25000);
 
-      await fetch(CMS_CONFIG.apiUrl, {
+      const res = await fetch(CMS_CONFIG.apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
           action: 'changePin',
-          pin: currentPin || activePin,
+          pin: cleanCurrent || activePin,
           newPin: cleanNewPin,
         }),
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.ok) {
+          remoteSaved = true;
+        } else {
+          serverErrorMsg = json.message || 'Gagal mengubah di server';
+        }
+      }
     } catch {
-      // offline or Apps Script network latency, local update is already active
+      // Offline atau jaringan lambat, pembaruan lokal sudah aktif
     }
 
-    setPinMessage({
-      text: 'PIN berhasil diubah dan aktif! Gunakan PIN baru ini untuk login berikutnya.',
-      error: false,
-    });
+    if (remoteSaved) {
+      setPinMessage({
+        text: 'PIN berhasil diubah di database cloud & perangkat ini! PIN bawaan lama tidak dapat digunakan lagi.',
+        error: false,
+      });
+    } else if (serverErrorMsg) {
+      setPinMessage({
+        text: `PIN tersimpan di perangkat ini, namun server Google Sheets merespons: ${serverErrorMsg}. Pastikan kode Apps Script telah diperbarui ke versi terbaru.`,
+        error: false,
+      });
+    } else {
+      setPinMessage({
+        text: 'PIN berhasil diubah dan aktif! Gunakan PIN baru ini untuk login berikutnya.',
+        error: false,
+      });
+    }
+
     setCurrentPin('');
     setNewPin('');
     setConfirmPin('');

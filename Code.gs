@@ -306,7 +306,7 @@ function auth_(pin) {
   const props = PropertiesService.getScriptProperties();
   const stored = props.getProperty('ADMIN_PIN') || DEFAULT_PIN;
   const inputPin = String(pin || '').trim();
-  if (inputPin !== stored && inputPin !== DEFAULT_PIN) {
+  if (inputPin !== stored) {
     throw new Error('PIN admin salah.');
   }
 }
