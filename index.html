@@ -861,10 +861,28 @@
       const file = this.files?.[0];
       if (!file) return;
       const reader = new FileReader();
+      const img = new Image();
       reader.onload = (e) => {
-        state.settings.logoUrl = e.target.result;
-        document.getElementById("logoUrlInput").value = state.settings.logoUrl;
-        updateAdminLogoPreview();
+        img.src = e.target.result;
+        img.onload = () => {
+          let w = img.width;
+          let h = img.height;
+          const maxW = 280, maxH = 120;
+          if (w > maxW || h > maxH) {
+            const ratio = Math.min(maxW / w, maxH / h);
+            w = Math.round(w * ratio);
+            h = Math.round(h * ratio);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, w, h);
+            state.settings.logoUrl = canvas.toDataURL('image/png');
+            document.getElementById("logoUrlInput").value = state.settings.logoUrl;
+            updateAdminLogoPreview();
+          }
+        };
       };
       reader.readAsDataURL(file);
     };
@@ -902,14 +920,19 @@
 
       try {
         const pin = localStorage.getItem("report_md_admin_pin") || "123456";
-        await fetch(CMS_CONFIG.apiUrl, {
+        const res = await fetch(CMS_CONFIG.apiUrl, {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify({ action: "saveState", pin, state: { menus: state.menus, settings: state.settings } })
         });
-        msg.textContent = "Tersimpan di Google Sheets & Lokal!";
+        const json = await res.json();
+        if (json.ok) {
+          msg.textContent = "✅ Tersimpan di Google Sheets & Seluruh Perangkat!";
+        } else {
+          msg.textContent = "⚠️ Google Sheets: " + (json.message || "Gagal menyimpan");
+        }
       } catch (e) {
-        msg.textContent = "Tersimpan secara lokal!";
+        msg.textContent = "⚠️ Tersimpan lokal. Periksa koneksi / update Code.gs";
       }
 
       applyBrandSettings();
@@ -957,8 +980,23 @@
       } catch (e) {}
     };
 
-    // Start App
+    // Start App & Realtime Sync Polling
     loadCMS();
+    setInterval(loadCMS, 15000); // Otomatis sync data setiap 15 detik
+    window.addEventListener('focus', loadCMS); // Sync seketika saat buka tab
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) loadCMS(); });
+    window.addEventListener('storage', (e) => {
+      if (e.key === CMS_CONFIG.cacheKey && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed.data) state.menus = parsed.data;
+          if (parsed.settings) state.settings = { ...state.settings, ...parsed.settings };
+          applyBrandSettings();
+          renderHeroSlider();
+          renderCards();
+        } catch(err) {}
+      }
+    });
   </script>
 </body>
 </html>
