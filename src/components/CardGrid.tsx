@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { MenuItem } from '../types';
 import {
   Calendar,
@@ -148,6 +148,20 @@ function getCardTheme(item: MenuItem, defaultWarna1?: string, defaultWarna2?: st
   };
 }
 
+function resolveImageUrl(url?: string): string {
+  if (!url) return '';
+  const trimmed = url.trim();
+  const matchFile = trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (matchFile && matchFile[1]) {
+    return `https://lh3.googleusercontent.com/d/${matchFile[1]}`;
+  }
+  const matchId = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (matchId && matchId[1] && trimmed.includes('drive.google.com')) {
+    return `https://lh3.googleusercontent.com/d/${matchId[1]}`;
+  }
+  return trimmed;
+}
+
 function CardAvatarBadge({
   fotoUrl,
   alt,
@@ -161,12 +175,19 @@ function CardAvatarBadge({
 }) {
   const [hasError, setHasError] = useState(false);
 
-  if (fotoUrl && !hasError) {
+  useEffect(() => {
+    setHasError(false);
+  }, [fotoUrl]);
+
+  const resolvedUrl = useMemo(() => resolveImageUrl(fotoUrl), [fotoUrl]);
+
+  if (resolvedUrl && !hasError) {
     return (
       <div className="w-10 h-10 sm:w-11 sm:h-11 md:w-12 md:h-12 rounded-full bg-white shadow-md p-0.5 shrink-0 transition-transform duration-200 group-hover:scale-110 overflow-hidden ring-2 ring-white/80">
         <img
-          src={fotoUrl}
+          src={resolvedUrl}
           alt={alt}
+          referrerPolicy="no-referrer"
           className="w-full h-full object-cover rounded-full"
           onError={() => setHasError(true)}
           loading="lazy"

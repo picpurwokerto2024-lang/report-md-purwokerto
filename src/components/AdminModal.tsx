@@ -527,11 +527,11 @@ export default function AdminModal({
     reader.onload = (uploadEvent) => {
       img.src = uploadEvent.target?.result as string;
       img.onload = () => {
-        // Crop center square for crisp round avatar
+        // Crop center square for crisp round avatar (compact 160x160 JPEG ~5-8KB base64)
         const size = Math.min(img.width, img.height);
         const startX = (img.width - size) / 2;
         const startY = (img.height - size) / 2;
-        const targetDim = 200;
+        const targetDim = 160;
 
         const canvas = document.createElement('canvas');
         canvas.width = targetDim;
@@ -539,7 +539,7 @@ export default function AdminModal({
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(img, startX, startY, size, size, 0, 0, targetDim, targetDim);
-          const compressed = canvas.toDataURL('image/jpeg', 0.75);
+          const compressed = canvas.toDataURL('image/jpeg', 0.72);
           const next = [...menus];
           next[uploadMenuIdx].fotoUrl = compressed;
           setMenus(next);
@@ -1148,8 +1148,9 @@ export default function AdminModal({
                             <div className="relative w-10 h-10 rounded-full bg-slate-100 border-2 border-blue-200 flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
                               {item.fotoUrl ? (
                                 <img
-                                  src={item.fotoUrl}
+                                  src={convertGoogleDriveUrl(item.fotoUrl)}
                                   alt={item.nama}
+                                  referrerPolicy="no-referrer"
                                   className="w-full h-full object-cover rounded-full"
                                   onError={(e) => {
                                     (e.target as HTMLElement).style.display = 'none';

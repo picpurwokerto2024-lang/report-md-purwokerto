@@ -145,6 +145,7 @@ export default function App() {
           urutan: Number(m.urutan || idx + 1),
           deskripsi: m.deskripsi || '',
           warna: m.warna || '',
+          fotoUrl: m.fotoUrl ? String(m.fotoUrl).trim() : '',
         }));
 
         setMenus(normalized);

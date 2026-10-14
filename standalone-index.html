@@ -601,7 +601,7 @@
             <div class="relative z-10 flex items-center justify-between">
               <div class="w-10 h-10 sm:w-11 sm:h-11 md:w-12 md:h-12 rounded-full bg-white shadow-md flex items-center justify-center shrink-0 overflow-hidden ring-2 ring-white/70">
                 ${m.fotoUrl ? `
-                  <img src="${esc(m.fotoUrl)}" alt="${esc(m.nama)}" class="w-full h-full object-cover rounded-full" onerror="this.outerHTML='<span style=\\'color:${style.color};\\'>${getIconSVG(style.icon, 'w-5 h-5 sm:w-6 sm:h-6 stroke-[2.2]')}</span>'">
+                  <img src="${esc(convertGoogleDriveUrl(m.fotoUrl))}" alt="${esc(m.nama)}" referrerpolicy="no-referrer" class="w-full h-full object-cover rounded-full" onerror="this.outerHTML='<span style=\\'color:${style.color};\\'>${getIconSVG(style.icon, 'w-5 h-5 sm:w-6 sm:h-6 stroke-[2.2]')}</span>'">
                 ` : `
                   <span style="color:${style.color};">${getIconSVG(style.icon, 'w-5 h-5 sm:w-6 sm:h-6 stroke-[2.2]')}</span>
                 `}
@@ -1078,12 +1078,12 @@
             const startX = (img.width - size) / 2;
             const startY = (img.height - size) / 2;
             const canvas = document.createElement('canvas');
-            canvas.width = 200;
-            canvas.height = 200;
+            canvas.width = 160;
+            canvas.height = 160;
             const ctx = canvas.getContext('2d');
             if (ctx) {
-              ctx.drawImage(img, startX, startY, size, size, 0, 0, 200, 200);
-              const compressed = canvas.toDataURL('image/jpeg', 0.75);
+              ctx.drawImage(img, startX, startY, size, size, 0, 0, 160, 160);
+              const compressed = canvas.toDataURL('image/jpeg', 0.72);
               state.menus[idx].fotoUrl = compressed;
               renderAdminMenus();
             }
