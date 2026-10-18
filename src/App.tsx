@@ -8,7 +8,11 @@ import NewsTicker from './components/NewsTicker';
 import BottomNav from './components/BottomNav';
 import DetailModal from './components/DetailModal';
 import AdminModal from './components/AdminModal';
-import { Search, SlidersHorizontal, RefreshCw, Clock } from 'lucide-react';
+import PWAInstallModal from './components/PWAInstallModal';
+import PWAInstallBanner from './components/PWAInstallBanner';
+import OfflineIndicator from './components/OfflineIndicator';
+import { usePWAInstall } from './hooks/usePWAInstall';
+import { Search, SlidersHorizontal, RefreshCw, Clock, Smartphone, Download } from 'lucide-react';
 
 export default function App() {
   const [menus, setMenus] = useState<MenuItem[]>(INITIAL_MENUS);
@@ -33,6 +37,10 @@ export default function App() {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // PWA Install State & Detection
+  const { isStandalone, isInstallable, install } = usePWAInstall();
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
 
   // Live ticking clock effect (runs every 1000ms)
   useEffect(() => {
@@ -378,9 +386,21 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right: CMS Status Badge, Manual Refresh & Real-time Live Clock */}
+          {/* Right: CMS Status Badge, Manual Refresh, Install PWA & Real-time Live Clock */}
           <div className="flex flex-col items-end shrink-0 text-right">
             <div className="flex items-center gap-1.5 sm:gap-2">
+              {!isStandalone && (
+                <button
+                  type="button"
+                  onClick={() => setIsInstallModalOpen(true)}
+                  title="Instal aplikasi ke Layar Utama HP"
+                  className="flex items-center gap-1 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:scale-95 text-white font-bold px-2 py-0.5 rounded-full text-[10px] sm:text-xs shadow-2xs transition-all cursor-pointer"
+                >
+                  <Smartphone className="w-3 h-3" />
+                  <span>Pasang di HP</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => loadCMS(true)}
@@ -418,6 +438,11 @@ export default function App() {
             </span>
           </div>
         </header>
+
+        {/* ============================================================== */}
+        {/* PWA INSTALL BANNER (Only shows when not installed in standalone) */}
+        {/* ============================================================== */}
+        <PWAInstallBanner onOpenGuide={() => setIsInstallModalOpen(true)} />
 
         {/* ============================================================== */}
         {/* 2. HERO BANNER SLIDER (Auto-Slide, customizable by Admin) */}
@@ -523,10 +548,15 @@ export default function App() {
       {/* ============================================================== */}
       {/* 6. BOTTOM NAVIGATION BAR */}
       {/* ============================================================== */}
-      <BottomNav activeTab={activeTab} onChangeTab={handleTabChange} />
+      <BottomNav
+        activeTab={activeTab}
+        onChangeTab={handleTabChange}
+        onOpenInstall={() => setIsInstallModalOpen(true)}
+        isStandalone={isStandalone}
+      />
 
       {/* ============================================================== */}
-      {/* 7. MODALS */}
+      {/* 7. MODALS & PWA PROMPTS */}
       {/* ============================================================== */}
       <DetailModal
         isOpen={isDetailOpen}
@@ -544,6 +574,13 @@ export default function App() {
         settings={settings}
         onUpdateData={handleUpdateFromAdmin}
       />
+
+      <PWAInstallModal
+        isOpen={isInstallModalOpen}
+        onClose={() => setIsInstallModalOpen(false)}
+      />
+
+      <OfflineIndicator />
     </div>
   );
 }
