@@ -183,7 +183,7 @@ function CardAvatarBadge({
 
   if (resolvedUrl && !hasError) {
     return (
-      <div className="w-10 h-10 sm:w-11 sm:h-11 md:w-12 md:h-12 rounded-full bg-white shadow-md p-0.5 shrink-0 transition-transform duration-200 group-hover:scale-110 overflow-hidden ring-2 ring-white/80">
+      <div className="w-9 h-9 sm:w-10 sm:h-10 md:w-11 md:h-11 rounded-full bg-white shadow-xs p-0.5 shrink-0 transition-transform duration-200 group-hover:scale-105 overflow-hidden ring-2 ring-white/80">
         <img
           src={resolvedUrl}
           alt={alt}
@@ -197,9 +197,9 @@ function CardAvatarBadge({
   }
 
   return (
-    <div className="w-10 h-10 sm:w-11 sm:h-11 md:w-12 md:h-12 rounded-full bg-white shadow-md flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-105">
+    <div className="w-9 h-9 sm:w-10 sm:h-10 md:w-11 md:h-11 rounded-full bg-white shadow-xs flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-105 ring-2 ring-white/80">
       <Icon
-        className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.2]"
+        className="w-4.5 h-4.5 sm:w-5 sm:h-5 stroke-[2.2]"
         style={{ color: iconColor }}
       />
     </div>
@@ -217,7 +217,7 @@ export default function CardGrid({ items, defaultWarna1, defaultWarna2 }: CardGr
   }
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-5 w-full">
+    <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3.5 md:gap-4 w-full">
       {items.map((item, index) => {
         const link = (item.link || '').trim();
         const isDisabled = !link || link === '#';
@@ -234,14 +234,14 @@ export default function CardGrid({ items, defaultWarna1, defaultWarna2 }: CardGr
               background: theme.gradient,
               animationDelay: `${index * 35}ms`,
             }}
-            className={`group relative flex flex-col justify-between p-3.5 sm:p-4 md:p-5 rounded-2xl md:rounded-[22px] min-h-[160px] sm:min-h-[175px] md:min-h-[185px] shadow-md shadow-blue-900/10 transition-all duration-200 overflow-hidden select-none border border-white/20 ${
+            className={`group relative flex flex-col justify-between p-3 sm:p-3.5 md:p-4 rounded-xl sm:rounded-2xl min-h-[142px] sm:min-h-[150px] md:min-h-[160px] shadow-sm shadow-blue-900/10 transition-all duration-200 overflow-hidden select-none border border-white/20 ${
               isDisabled
                 ? 'opacity-60 cursor-not-allowed grayscale-[20%]'
-                : 'hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-900/20 active:translate-y-0 cursor-pointer'
+                : 'hover:-translate-y-0.5 hover:shadow-lg hover:shadow-blue-900/15 active:translate-y-0 cursor-pointer'
             }`}
           >
             {/* Watermark Illustration in the upper-right corner */}
-            <div className="absolute -top-1 -right-1 w-24 h-24 sm:w-28 sm:h-28 text-white opacity-[0.14] pointer-events-none transition-transform duration-300 group-hover:scale-110">
+            <div className="absolute -top-1 -right-1 w-20 h-20 sm:w-24 sm:h-24 text-white opacity-[0.11] pointer-events-none transition-transform duration-300 group-hover:scale-110">
               {watermarkType === 'calendar' && (
                 <Calendar className="w-full h-full stroke-[1.8]" />
               )}
@@ -282,19 +282,19 @@ export default function CardGrid({ items, defaultWarna1, defaultWarna2 }: CardGr
             </div>
 
             {/* Middle/Bottom: Title & Description */}
-            <div className="relative z-10 mt-3 sm:mt-4 pr-7 sm:pr-8">
-              <h3 className="font-extrabold text-white text-xs sm:text-sm md:text-base leading-snug tracking-tight drop-shadow-xs line-clamp-2">
+            <div className="relative z-10 mt-2 sm:mt-2.5 pr-6 sm:pr-7">
+              <h3 className="font-extrabold text-white text-[12px] sm:text-[13px] md:text-[14.5px] leading-snug tracking-tight drop-shadow-xs line-clamp-2">
                 {item.nama}
               </h3>
-              <p className="text-white/85 text-[11px] sm:text-xs md:text-[13px] leading-tight font-normal mt-1 line-clamp-2 drop-shadow-xs">
+              <p className="text-white/85 text-[10.5px] sm:text-[11px] md:text-xs leading-tight font-normal mt-0.5 line-clamp-2 drop-shadow-xs">
                 {isDisabled ? 'Belum tersedia' : item.deskripsi || 'Klik untuk membuka laporan'}
               </p>
             </div>
 
             {/* Bottom Right: Arrow Button */}
-            <div className="absolute right-3 bottom-3 sm:right-3.5 sm:bottom-3.5 md:right-4 md:bottom-4 z-10">
-              <div className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full bg-white/20 group-hover:bg-white/35 active:scale-90 text-white flex items-center justify-center transition-all duration-200 backdrop-blur-xs shadow-xs">
-                <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5] transition-transform duration-200 group-hover:translate-x-0.5" />
+            <div className="absolute right-2.5 bottom-2.5 sm:right-3 sm:bottom-3 md:right-3.5 md:bottom-3.5 z-10">
+              <div className="w-5.5 h-5.5 sm:w-6 sm:h-6 md:w-7 md:h-7 rounded-full bg-white/20 group-hover:bg-white/35 active:scale-90 text-white flex items-center justify-center transition-all duration-200 backdrop-blur-xs shadow-2xs">
+                <ArrowRight className="w-3 h-3 sm:w-3.5 sm:h-3.5 stroke-[2.5] transition-transform duration-200 group-hover:translate-x-0.5" />
               </div>
             </div>
 
