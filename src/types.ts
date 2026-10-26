@@ -7,6 +7,7 @@ export interface BannerSlide {
   badgeText?: string;
   linkUrl?: string;
   hideOverlay?: boolean;
+  fitMode?: 'contain' | 'cover';
 }
 
 export interface MenuItem {
@@ -30,6 +31,9 @@ export interface SiteSettings {
   banners?: BannerSlide[];
   logoUrl?: string;
   logoText?: string;
+  watermarkText?: string;
+  watermarkEnabled?: boolean;
+  watermarkLink?: string;
 }
 
 export interface CMSApiResponse {

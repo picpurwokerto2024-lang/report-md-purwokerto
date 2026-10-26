@@ -11,15 +11,41 @@ interface HeroBannerProps {
 const normalizeImageUrl = (url?: string): string => {
   if (!url) return '';
   const trimmed = url.trim();
+  if (trimmed.startsWith('data:image/')) {
+    return trimmed;
+  }
+
+  // Convert Google Drive share links to Full HD 1920px direct stream
   const matchFile = trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
   if (matchFile && matchFile[1]) {
-    return `https://lh3.googleusercontent.com/d/${matchFile[1]}`;
+    return `https://lh3.googleusercontent.com/d/${matchFile[1]}=w1920`;
   }
   const matchId = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
   if (matchId && matchId[1] && trimmed.includes('drive.google.com')) {
-    return `https://lh3.googleusercontent.com/d/${matchId[1]}`;
+    return `https://lh3.googleusercontent.com/d/${matchId[1]}=w1920`;
   }
+
+  // Upgrade existing lh3 Google Drive URLs lacking an HD width parameter
+  const matchLh3 = trimmed.match(/^https:\/\/lh3\.googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)$/);
+  if (matchLh3 && matchLh3[1]) {
+    return `https://lh3.googleusercontent.com/d/${matchLh3[1]}=w1920`;
+  }
+
   return trimmed;
+};
+
+// Map natural image width/height ratio to a discrete Tailwind aspect-ratio class
+// Locked to slide[0] so auto-sliding never causes layout shift (CLS = 0)
+const getLandscapeAspectClass = (ratio: number | null): string => {
+  if (!ratio || !Number.isFinite(ratio) || ratio <= 0) {
+    return 'aspect-[16/8.6]';
+  }
+  if (ratio < 1.66) return 'aspect-[16/10]';
+  if (ratio < 1.88) return 'aspect-[16/9]';
+  if (ratio < 2.10) return 'aspect-[2/1]';
+  if (ratio < 2.34) return 'aspect-[22/10]';
+  if (ratio < 2.62) return 'aspect-[12/5]';
+  return 'aspect-[28/10]';
 };
 
 export default function HeroBanner({
@@ -29,7 +55,14 @@ export default function HeroBanner({
   const slides = banners && banners.length > 0 ? banners : DEFAULT_BANNERS;
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const [primaryRatio, setPrimaryRatio] = useState<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Reset measured ratio when primary slide image changes
+  const firstSlideUrl = slides[0]?.imageUrl;
+  useEffect(() => {
+    setPrimaryRatio(null);
+  }, [firstSlideUrl]);
 
   // Auto-slide effect
   useEffect(() => {
@@ -60,13 +93,15 @@ export default function HeroBanner({
     setCurrentIndex((prev) => (prev + 1) % slides.length);
   };
 
+  const aspectClass = getLandscapeAspectClass(primaryRatio);
+
   return (
     <div
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
       onTouchStart={() => setIsPaused(true)}
       onTouchEnd={() => setIsPaused(false)}
-      className="group relative w-full overflow-hidden rounded-2xl md:rounded-3xl shadow-lg shadow-blue-900/10 bg-slate-900 aspect-[16/6] min-h-[145px] max-h-[220px] select-none"
+      className={`group relative w-full overflow-hidden rounded-2xl md:rounded-3xl shadow-lg shadow-blue-900/12 bg-slate-900 ${aspectClass} min-h-[125px] max-h-[500px] select-none ring-1 ring-blue-950/10`}
     >
       {/* Slides Container */}
       {slides.map((slide, index) => {
@@ -78,6 +113,8 @@ export default function HeroBanner({
           (slide.subtitle && slide.subtitle.trim())
         );
         const showTextOverlay = !slide.hideOverlay && hasTextContent;
+        // Default to 'contain' (uncropped landscape) unless user explicitly picks 'cover'
+        const useUncroppedContain = slide.fitMode !== 'cover';
 
         return (
           <div
@@ -86,13 +123,33 @@ export default function HeroBanner({
               isActive ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
             }`}
           >
-            {/* Background Image */}
+            {/* Soft Ambient Backdrop Layer so uncropped landscape banners never show black bars */}
+            {useUncroppedContain && (
+              <img
+                src={imgUrl}
+                alt=""
+                aria-hidden="true"
+                decoding="async"
+                referrerPolicy="no-referrer"
+                className="absolute inset-0 w-full h-full object-cover object-center scale-110 blur-xl opacity-65 brightness-75 pointer-events-none"
+              />
+            )}
+
+            {/* Crisp HD Foreground Banner Image (No scale-105 crop/blur) */}
             <img
               src={imgUrl}
               alt={slide.title || 'Banner MD Purwokerto'}
-              className="absolute inset-0 w-full h-full object-cover object-center scale-105 transition-transform duration-1000 ease-out group-hover:scale-100"
+              decoding="async"
+              fetchPriority={isActive ? 'high' : 'auto'}
               referrerPolicy="no-referrer"
-              crossOrigin="anonymous"
+              onLoad={(e) => {
+                if (index === 0) {
+                  const target = e.currentTarget;
+                  if (target.naturalWidth > 0 && target.naturalHeight > 0) {
+                    setPrimaryRatio(target.naturalWidth / target.naturalHeight);
+                  }
+                }
+              }}
               onError={(e) => {
                 const target = e.target as HTMLImageElement;
                 // If it was a drive URL using lh3, try uc export fallback
@@ -102,18 +159,23 @@ export default function HeroBanner({
                   return;
                 }
                 // Fallback to default banner if custom URL fails
-                target.src = DEFAULT_BANNERS[0].imageUrl;
+                if (target.src !== DEFAULT_BANNERS[0].imageUrl) {
+                  target.src = DEFAULT_BANNERS[0].imageUrl;
+                }
               }}
+              className={`relative z-[1] w-full h-full ${
+                useUncroppedContain ? 'object-contain' : 'object-cover'
+              } object-center`}
             />
 
             {/* Dark gradient for text legibility (Only when text overlay is active) */}
             {showTextOverlay && (
-              <div className="absolute inset-0 bg-gradient-to-r from-blue-950/80 via-transparent to-transparent pointer-events-none" />
+              <div className="absolute inset-0 z-[2] bg-gradient-to-r from-blue-950/80 via-transparent to-transparent pointer-events-none" />
             )}
 
             {/* Left Blue Gradient Ribbon with Text Content (Only when enabled and has text) */}
             {showTextOverlay && (
-              <div className="absolute inset-y-0 left-0 w-[64%] sm:w-[58%] md:w-[50%] bg-gradient-to-r from-[#0d3b82]/95 via-[#1a56b7]/90 to-transparent flex flex-col justify-center px-4 sm:px-6 md:px-7 z-10">
+              <div className="absolute inset-y-0 left-0 w-[62%] sm:w-[56%] md:w-[48%] bg-gradient-to-r from-[#0d3b82]/95 via-[#1a56b7]/88 to-transparent flex flex-col justify-center px-4 sm:px-6 md:px-7 z-10 pointer-events-none">
                 {slide.scriptText && (
                   <span className="font-['Dancing_Script',cursive] text-white text-xl sm:text-2xl md:text-3xl font-bold -mb-1 drop-shadow">
                     {slide.scriptText}

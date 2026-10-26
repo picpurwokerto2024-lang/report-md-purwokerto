@@ -46,6 +46,9 @@ export const DEFAULT_SETTINGS: SiteSettings = {
   banners: DEFAULT_BANNERS,
   logoUrl: '',
   logoText: 'BTB',
+  watermarkText: 'Powered by Intisari',
+  watermarkEnabled: true,
+  watermarkLink: '',
 };
 
 export const INITIAL_MENUS: MenuItem[] = [

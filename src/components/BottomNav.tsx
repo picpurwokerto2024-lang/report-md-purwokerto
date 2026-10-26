@@ -16,7 +16,7 @@ export default function BottomNav({
 }: BottomNavProps) {
   return (
     <nav className="fixed bottom-0 inset-x-0 bg-white/95 border-t border-slate-200/80 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] z-40 backdrop-blur-md">
-      <div className="max-w-[800px] mx-auto px-2 sm:px-6 h-16 flex items-center justify-around">
+      <div className="max-w-[920px] mx-auto px-2 sm:px-6 h-16 flex items-center justify-around">
         {/* Beranda */}
         <button
           type="button"

@@ -179,24 +179,41 @@ function saveState(pin, payload) {
       ['logoUrl_part2', logoPart2],
       ['logoUrl_part3', logoPart3],
       ['logoText', truncateCell_(st.logoText || 'BTB')],
+      ['watermarkText', truncateCell_(st.watermarkText || 'Powered by Intisari')],
+      ['watermarkEnabled', st.watermarkEnabled === false ? 'false' : 'true'],
+      ['watermarkLink', truncateCell_(st.watermarkLink || '')],
       ['updatedAt', new Date().toISOString()]
     ];
     settingsSheet.getRange(2, 1, settingRows.length, 2).setValues(settingRows);
     settingsSheet.setFrozenRows(1);
 
-    // 3. Simpan Banners ke Sheet Terpisah (Mencegah Limit 50.000 Karakter Google Sheets)
+    // 3. Simpan Banners ke Sheet Terpisah (Mencegah Limit 50.000 Karakter Google Sheets, Mendukung Gambar HD)
     if (Array.isArray(st.banners)) {
       let bannersSheet = ss.getSheetByName('Banners');
+      const bannerHeaders = [[
+        'id',
+        'imageUrl',
+        'title',
+        'subtitle',
+        'scriptText',
+        'badgeText',
+        'imageUrl_part2',
+        'imageUrl_part3',
+        'hideOverlay',
+        'fitMode',
+        'imageUrl_part4'
+      ]];
       if (st.banners.length > 0) {
         if (!bannersSheet) bannersSheet = ss.insertSheet('Banners');
         bannersSheet.clear();
-        bannersSheet.getRange(1, 1, 1, 9).setValues([['id', 'imageUrl', 'title', 'subtitle', 'scriptText', 'badgeText', 'imageUrl_part2', 'imageUrl_part3', 'hideOverlay']]);
+        bannersSheet.getRange(1, 1, 1, 11).setValues(bannerHeaders);
 
         const bannerRows = st.banners.map((b, idx) => {
           const imgRaw = String(b.imageUrl || '').trim();
           const p1 = imgRaw.substring(0, 45000);
           const p2 = imgRaw.substring(45000, 90000);
           const p3 = imgRaw.substring(90000, 135000);
+          const p4 = imgRaw.substring(135000, 180000);
           return [
             String(b.id || ('banner-' + (idx + 1))),
             p1,
@@ -206,14 +223,16 @@ function saveState(pin, payload) {
             truncateCell_(b.badgeText || ''),
             p2,
             p3,
-            b.hideOverlay ? 'true' : 'false'
+            b.hideOverlay ? 'true' : 'false',
+            b.fitMode === 'cover' ? 'cover' : 'contain',
+            p4
           ];
         });
-        bannersSheet.getRange(2, 1, bannerRows.length, 9).setValues(bannerRows);
+        bannersSheet.getRange(2, 1, bannerRows.length, 11).setValues(bannerRows);
         bannersSheet.setFrozenRows(1);
       } else if (bannersSheet) {
         bannersSheet.clear();
-        bannersSheet.getRange(1, 1, 1, 9).setValues([['id', 'imageUrl', 'title', 'subtitle', 'scriptText', 'badgeText', 'imageUrl_part2', 'imageUrl_part3', 'hideOverlay']]);
+        bannersSheet.getRange(1, 1, 1, 11).setValues(bannerHeaders);
         bannersSheet.setFrozenRows(1);
       }
     }
@@ -248,15 +267,17 @@ function readMenus_(ss) {
 function readBanners_(ss) {
   const sh = ss.getSheetByName('Banners');
   if (!sh || sh.getLastRow() < 2) return null;
-  ensureCols_(sh, 9);
-  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 9).getValues();
+  ensureCols_(sh, 11);
+  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 11).getValues();
   const list = [];
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     let img = String(r[1] || '').trim();
     if (r[6]) img += String(r[6]).trim();
     if (r[7]) img += String(r[7]).trim();
+    if (r[10]) img += String(r[10]).trim();
     if (!img) continue;
+    const rawFit = String(r[9] || '').trim();
     list.push({
       id: String(r[0] || ('banner-' + (i + 1))),
       imageUrl: img,
@@ -264,7 +285,8 @@ function readBanners_(ss) {
       subtitle: String(r[3] || ''),
       scriptText: String(r[4] || ''),
       badgeText: String(r[5] || ''),
-      hideOverlay: String(r[8] || '') === 'true'
+      hideOverlay: String(r[8] || '') === 'true',
+      fitMode: rawFit === 'cover' ? 'cover' : 'contain'
     });
   }
   return list.length > 0 ? list : null;
@@ -302,6 +324,17 @@ function readSettings_(ss) {
   } else {
     out.banners = [];
   }
+
+  // Pengaturan Watermark
+  if (out.watermarkEnabled !== undefined) {
+    out.watermarkEnabled = String(out.watermarkEnabled).toLowerCase() !== 'false';
+  } else {
+    out.watermarkEnabled = true;
+  }
+  if (!out.watermarkText) {
+    out.watermarkText = 'Powered by Intisari';
+  }
+
   return out;
 }
 

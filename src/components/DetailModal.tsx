@@ -4,9 +4,15 @@ interface DetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   updateDate?: string;
+  watermarkText?: string;
 }
 
-export default function DetailModal({ isOpen, onClose, updateDate = '13 Okt 2026' }: DetailModalProps) {
+export default function DetailModal({
+  isOpen,
+  onClose,
+  updateDate = '13 Okt 2026',
+  watermarkText = 'Powered by Intisari',
+}: DetailModalProps) {
   if (!isOpen) return null;
 
   return (
@@ -70,7 +76,10 @@ export default function DetailModal({ isOpen, onClose, updateDate = '13 Okt 2026
           </div>
         </div>
 
-        <div className="mt-5 pt-3 border-t border-slate-100 flex justify-end">
+        <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between">
+          <span className="text-[11px] text-slate-400 font-medium">
+            {watermarkText || 'Powered by Intisari'}
+          </span>
           <button
             type="button"
             onClick={onClose}

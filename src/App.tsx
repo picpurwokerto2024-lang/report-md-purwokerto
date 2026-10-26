@@ -12,7 +12,7 @@ import PWAInstallModal from './components/PWAInstallModal';
 import PWAInstallBanner from './components/PWAInstallBanner';
 import OfflineIndicator from './components/OfflineIndicator';
 import { usePWAInstall } from './hooks/usePWAInstall';
-import { Search, SlidersHorizontal, RefreshCw, Clock, Smartphone, Download } from 'lucide-react';
+import { Search, SlidersHorizontal, RefreshCw, Clock, Smartphone, Download, Sparkles, X } from 'lucide-react';
 
 export default function App() {
   const [menus, setMenus] = useState<MenuItem[]>(INITIAL_MENUS);
@@ -358,7 +358,7 @@ export default function App() {
       <div className="fixed top-1/2 -left-40 w-96 h-96 rounded-full bg-indigo-200/20 blur-3xl pointer-events-none" />
 
       {/* Main Container */}
-      <div className="max-w-[840px] mx-auto px-3.5 sm:px-5 md:px-6 pt-4 sm:pt-6 space-y-4 sm:space-y-5">
+      <div className="max-w-[920px] mx-auto px-3.5 sm:px-5 md:px-6 pt-3 sm:pt-5 space-y-2.5 sm:space-y-3.5">
         {/* ============================================================== */}
         {/* 1. BRAND HEADER (Matching screenshot logo, title & CMS badge) */}
         {/* ============================================================== */}
@@ -445,48 +445,65 @@ export default function App() {
         <PWAInstallBanner onOpenGuide={() => setIsInstallModalOpen(true)} />
 
         {/* ============================================================== */}
-        {/* 2. HERO BANNER SLIDER (Auto-Slide, customizable by Admin) */}
+        {/* 2. HERO BANNER SLIDER (Auto-Slide, Wider Landscape & HD) */}
         {/* ============================================================== */}
-        <HeroBanner
-          banners={settings.banners}
-          autoSlideInterval={settings.bannerAutoSlideInterval}
-        />
+        <div className="-mx-1.5 sm:-mx-1 md:mx-0">
+          <HeroBanner
+            banners={settings.banners}
+            autoSlideInterval={settings.bannerAutoSlideInterval}
+          />
+        </div>
 
         {/* ============================================================== */}
-        {/* 3. SEARCH BAR & FILTER AFFORDANCE */}
+        {/* 3. COMPACT SEARCH BAR & FILTER AFFORDANCE */}
         {/* ============================================================== */}
         <div className="relative w-full">
           <div className="relative flex items-center">
-            {/* Search Icon */}
-            <Search className="absolute left-4 w-5 h-5 text-[#164fc1] pointer-events-none" />
+            {/* Compact Search Icon */}
+            <Search className="absolute left-3 w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#164fc1]/80 pointer-events-none" />
 
-            {/* Pill Search Input */}
+            {/* Slim Search Input */}
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={settings.searchPlaceholder || 'Cari menu atau nama MD...'}
-              className="w-full h-13 sm:h-14 pl-12 pr-12 rounded-full border-2 border-[#5aa9ff]/70 bg-white/95 text-[#163f73] font-medium text-sm sm:text-base shadow-md shadow-blue-500/10 placeholder:text-slate-400 focus:outline-none focus:border-[#164fc1] focus:ring-4 focus:ring-blue-100 transition-all"
+              className="w-full h-9 sm:h-9.5 pl-8.5 sm:pl-9.5 pr-15 rounded-xl border border-blue-200/90 bg-white/90 text-[#163f73] font-medium text-xs sm:text-[13px] shadow-2xs placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-[#164fc1] focus:ring-2 focus:ring-blue-100/80 transition-all"
             />
 
-            {/* Filter Toggle Button */}
-            <button
-              type="button"
-              onClick={() => setShowCategoryFilter(!showCategoryFilter)}
-              className={`absolute right-3.5 w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
-                showCategoryFilter || selectedCategory !== 'all'
-                  ? 'bg-blue-100 text-[#1244a5]'
-                  : 'text-[#164fc1] hover:bg-slate-100'
-              }`}
-              title="Filter Kategori"
-            >
-              <SlidersHorizontal className="w-4 h-4 stroke-[2.2]" />
-            </button>
+            {/* Right Controls: Clear + Filter Toggle */}
+            <div className="absolute right-1.5 flex items-center gap-0.5">
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="w-6.5 h-6.5 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                  title="Hapus pencarian"
+                  aria-label="Hapus pencarian"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setShowCategoryFilter(!showCategoryFilter)}
+                className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
+                  showCategoryFilter || selectedCategory !== 'all'
+                    ? 'bg-blue-100 text-[#1244a5]'
+                    : 'text-[#164fc1]/85 hover:bg-slate-100'
+                }`}
+                title="Filter Kategori"
+                aria-label="Filter Kategori"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 stroke-[2.2]" />
+              </button>
+            </div>
           </div>
 
-          {/* Quick Category Filter Pills */}
+          {/* Compact Segmented Category Filter */}
           {showCategoryFilter && (
-            <div className="flex items-center gap-1.5 overflow-x-auto py-2.5 px-1 scrollbar-none animate-in fade-in duration-200">
+            <div className="flex items-center gap-1 overflow-x-auto mt-1.5 p-1 bg-white/75 border border-blue-100/80 rounded-xl scrollbar-none animate-in fade-in duration-150">
               {[
                 { id: 'all', label: 'Semua' },
                 { id: 'jadwal', label: 'Jadwal MD' },
@@ -499,10 +516,10 @@ export default function App() {
                   key={cat.id}
                   type="button"
                   onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                     selectedCategory === cat.id
-                      ? 'bg-[#1244a5] text-white shadow-xs'
-                      : 'bg-white/80 hover:bg-white text-slate-600 border border-slate-200'
+                      ? 'bg-[#1244a5] text-white shadow-2xs'
+                      : 'text-slate-600 hover:bg-white hover:text-[#1244a5]'
                   }`}
                 >
                   {cat.label}
@@ -532,7 +549,7 @@ export default function App() {
         />
 
         {/* Quick Refresh Float Link */}
-        <div className="flex items-center justify-center pt-1 pb-4">
+        <div className="flex items-center justify-center pt-1 pb-2">
           <button
             type="button"
             onClick={() => loadCMS(true)}
@@ -543,6 +560,38 @@ export default function App() {
             <span>{isRefreshing ? 'Memperbarui...' : 'Sinkronkan data terbaru'}</span>
           </button>
         </div>
+
+        {/* ============================================================== */}
+        {/* WATERMARK ("Powered by Intisari") - Can be toggled & customized in Admin */}
+        {/* ============================================================== */}
+        {settings.watermarkEnabled !== false && (
+          <div className="flex flex-col items-center justify-center pt-0 pb-4 select-none">
+            {settings.watermarkLink ? (
+              <a
+                href={settings.watermarkLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Buka tautan"
+                className="group inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-white/70 hover:bg-white text-slate-500 hover:text-[#1244a5] text-[11px] sm:text-xs font-semibold border border-blue-100 shadow-2xs backdrop-blur-xs transition-all hover:shadow-xs active:scale-98"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 group-hover:bg-emerald-500 transition-colors" />
+                <span className="tracking-wide">
+                  {settings.watermarkText || 'Powered by Intisari'}
+                </span>
+                <span className="text-[10px] text-blue-400 group-hover:translate-x-0.5 transition-transform">
+                  &rarr;
+                </span>
+              </a>
+            ) : (
+              <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-white/60 text-slate-500 text-[11px] sm:text-xs font-semibold border border-blue-100/70 shadow-2xs backdrop-blur-xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500/80" />
+                <span className="tracking-wide">
+                  {settings.watermarkText || 'Powered by Intisari'}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ============================================================== */}
@@ -562,6 +611,7 @@ export default function App() {
         isOpen={isDetailOpen}
         onClose={() => setIsDetailOpen(false)}
         updateDate={formattedDate}
+        watermarkText={settings.watermarkText}
       />
 
       <AdminModal
