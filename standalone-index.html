@@ -365,6 +365,25 @@
                 <input id="searchPlaceInput" type="text" class="w-full text-sm bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 outline-none">
               </div>
             </div>
+
+            <!-- Watermark Halaman -->
+            <div class="space-y-2.5 pt-3 border-t border-slate-100">
+              <div class="flex items-center justify-between gap-2">
+                <h5 class="text-xs font-bold text-[#1244a5] uppercase">Watermark Halaman (&quot;Powered by&quot;)</h5>
+                <label class="flex items-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer">
+                  <input id="watermarkEnabledInput" type="checkbox" checked class="w-4 h-4 rounded">
+                  <span>Tampilkan Watermark</span>
+                </label>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Teks Watermark</label>
+                <input id="watermarkTextInput" type="text" placeholder="Powered by Intisari" class="w-full text-sm bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 outline-none">
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Tautan URL Watermark (Opsional)</label>
+                <input id="watermarkLinkInput" type="text" placeholder="https://..." class="w-full text-sm bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 outline-none">
+              </div>
+            </div>
           </div>
 
           <!-- Pane 4: Ganti PIN -->
@@ -400,6 +419,70 @@
       apiUrl: "https://script.google.com/macros/s/AKfycbz45FDBhstgB0d6mrEKPbPtCpsjQaxPMmAMVlYcKKfiwJDIpwgMfuN40zLNPhvnKLSdaA/exec",
       cacheKey: "report-md-cms-v2-cache"
     };
+    const META_DELIMITER = "\u2063__CFG__:";
+
+    function unpackCloudSettings(raw, fallback) {
+      const fb = fallback || {};
+      if (!raw || typeof raw !== "object") return { ...fb };
+      let cleanPlace = typeof raw.searchPlaceholder === "string" ? raw.searchPlaceholder : (fb.searchPlaceholder || "Cari menu atau nama MD...");
+      let meta = null;
+      const idx = cleanPlace.indexOf(META_DELIMITER);
+      if (idx >= 0) {
+        const jsonPart = cleanPlace.slice(idx + META_DELIMITER.length);
+        cleanPlace = cleanPlace.slice(0, idx) || "Cari menu atau nama MD...";
+        try { meta = JSON.parse(jsonPart); } catch (e) {}
+      }
+      let wmEnabled = fb.watermarkEnabled !== false && String(fb.watermarkEnabled) !== "false";
+      if (meta && typeof meta.we === "boolean") wmEnabled = meta.we;
+      else if (raw.watermarkEnabled !== undefined) wmEnabled = raw.watermarkEnabled !== false && String(raw.watermarkEnabled).toLowerCase() !== "false";
+
+      let wmText = fb.watermarkText !== undefined ? fb.watermarkText : "Powered by Intisari";
+      if (meta && typeof meta.wt === "string") wmText = meta.wt;
+      else if (typeof raw.watermarkText === "string") wmText = raw.watermarkText;
+
+      let wmLink = fb.watermarkLink || "";
+      if (meta && typeof meta.wl === "string") wmLink = meta.wl;
+      else if (typeof raw.watermarkLink === "string") wmLink = raw.watermarkLink;
+
+      const rawBanners = Array.isArray(raw.banners) && raw.banners.length ? raw.banners : (fb.banners && fb.banners.length ? fb.banners : DEFAULT_SLIDES);
+      const banners = rawBanners.map((b, i) => ({
+        ...b,
+        fitMode: b.fitMode || (meta && meta.bf && meta.bf[i]) || "contain"
+      }));
+
+      let logoUrl = typeof raw.logoUrl === "string" ? raw.logoUrl : (fb.logoUrl || "");
+      if (raw.logoUrl_part2) logoUrl += raw.logoUrl_part2;
+      if (raw.logoUrl_part3) logoUrl += raw.logoUrl_part3;
+
+      return {
+        ...fb,
+        ...raw,
+        logoUrl,
+        searchPlaceholder: cleanPlace,
+        banners,
+        watermarkEnabled: wmEnabled,
+        watermarkText: wmText,
+        watermarkLink: wmLink
+      };
+    }
+
+    function packCloudSettings(st) {
+      const rawPlace = String(st.searchPlaceholder || "Cari menu atau nama MD...");
+      const cleanPlace = rawPlace.indexOf(META_DELIMITER) >= 0 ? rawPlace.slice(0, rawPlace.indexOf(META_DELIMITER)) : rawPlace;
+      const meta = {
+        we: st.watermarkEnabled !== false && String(st.watermarkEnabled) !== "false",
+        wt: st.watermarkText ?? "",
+        wl: st.watermarkLink ?? "",
+        bf: (st.banners || []).map(b => b.fitMode === "cover" ? "cover" : "contain")
+      };
+      return {
+        ...st,
+        searchPlaceholder: cleanPlace + META_DELIMITER + JSON.stringify(meta),
+        watermarkEnabled: meta.we,
+        watermarkText: meta.wt,
+        watermarkLink: meta.wl
+      };
+    }
 
     const DEFAULT_SLIDES = [
       {
@@ -692,11 +775,12 @@
       // Watermark display
       const wmBox = document.getElementById("watermarkContainer");
       if (wmBox) {
-        if (st.watermarkEnabled === false || st.watermarkEnabled === "false") {
+        const wmText = (st.watermarkText !== undefined ? String(st.watermarkText) : "Powered by Intisari").trim();
+        const isOff = st.watermarkEnabled === false || String(st.watermarkEnabled).toLowerCase() === "false" || !wmText;
+        if (isOff) {
           wmBox.style.display = "none";
         } else {
           wmBox.style.display = "flex";
-          const wmText = st.watermarkText || "Powered by Intisari";
           if (st.watermarkLink) {
             wmBox.innerHTML = `
               <a href="${esc(st.watermarkLink)}" target="_blank" rel="noopener noreferrer" class="group inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-white/70 hover:bg-white text-slate-500 hover:text-[#1244a5] text-[11px] sm:text-xs font-semibold border border-blue-100 shadow-2xs backdrop-blur-xs transition-all hover:shadow-xs">
@@ -877,10 +961,7 @@
           failSyncCount = 0;
           state.menus = json.menus;
           if (json.settings) {
-            const safeBanners = json.settings.banners && Array.isArray(json.settings.banners) && json.settings.banners.length > 0
-              ? json.settings.banners
-              : (state.settings.banners && state.settings.banners.length ? state.settings.banners : DEFAULT_SLIDES);
-            state.settings = { ...state.settings, ...json.settings, banners: safeBanners };
+            state.settings = unpackCloudSettings(json.settings, state.settings);
           }
           lastSyncDate = new Date();
           localStorage.setItem(CMS_CONFIG.cacheKey, JSON.stringify({ time: Date.now(), data: state.menus, settings: state.settings }));
@@ -983,7 +1064,7 @@
             document.getElementById("adminLoginView").classList.add("hidden");
             document.getElementById("adminPanelView").classList.remove("hidden");
             if (json.data.menus) state.menus = json.data.menus;
-            if (json.data.settings) state.settings = json.data.settings;
+            if (json.data.settings) state.settings = unpackCloudSettings(json.data.settings, state.settings);
             populateAdminPanel();
             return;
           } else {
@@ -1036,6 +1117,9 @@
       document.getElementById("searchPlaceInput").value = state.settings.searchPlaceholder || "Cari menu atau nama MD...";
       document.getElementById("logoUrlInput").value = state.settings.logoUrl || "";
       document.getElementById("logoTextInput").value = state.settings.logoText || "BTB";
+      document.getElementById("watermarkEnabledInput").checked = state.settings.watermarkEnabled !== false && String(state.settings.watermarkEnabled) !== "false";
+      document.getElementById("watermarkTextInput").value = state.settings.watermarkText !== undefined ? state.settings.watermarkText : "Powered by Intisari";
+      document.getElementById("watermarkLinkInput").value = state.settings.watermarkLink || "";
       updateAdminLogoPreview();
     }
 
@@ -1298,6 +1382,10 @@
       state.settings.searchPlaceholder = document.getElementById("searchPlaceInput").value;
       state.settings.logoUrl = document.getElementById("logoUrlInput").value;
       state.settings.logoText = document.getElementById("logoTextInput").value;
+      const wmTextVal = document.getElementById("watermarkTextInput").value.trim();
+      state.settings.watermarkText = wmTextVal;
+      state.settings.watermarkEnabled = document.getElementById("watermarkEnabledInput").checked && wmTextVal.length > 0;
+      state.settings.watermarkLink = document.getElementById("watermarkLinkInput").value.trim();
 
       localStorage.setItem(CMS_CONFIG.cacheKey, JSON.stringify({ time: Date.now(), data: state.menus, settings: state.settings }));
       lastSyncDate = new Date();
@@ -1310,10 +1398,11 @@
 
       try {
         const pin = localStorage.getItem("report_md_admin_pin") || "123456";
+        const cloudSettings = packCloudSettings(state.settings);
         const res = await fetch(CMS_CONFIG.apiUrl, {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({ action: "saveState", pin, state: { menus: state.menus, settings: state.settings } })
+          body: JSON.stringify({ action: "saveState", pin, state: { menus: state.menus, settings: cloudSettings } })
         });
         const json = await res.json();
         if (json.ok) {

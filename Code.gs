@@ -178,9 +178,9 @@ function saveState(pin, payload) {
       ['logoUrl', logoPart1],
       ['logoUrl_part2', logoPart2],
       ['logoUrl_part3', logoPart3],
-      ['logoText', truncateCell_(st.logoText || 'BTB')],
-      ['watermarkText', truncateCell_(st.watermarkText || 'Powered by Intisari')],
-      ['watermarkEnabled', st.watermarkEnabled === false ? 'false' : 'true'],
+      ['logoText', truncateCell_(st.logoText !== undefined ? String(st.logoText) : 'BTB')],
+      ['watermarkText', truncateCell_(st.watermarkText !== undefined ? String(st.watermarkText) : 'Powered by Intisari')],
+      ['watermarkEnabled', st.watermarkEnabled === false || String(st.watermarkEnabled) === 'false' ? 'false' : 'true'],
       ['watermarkLink', truncateCell_(st.watermarkLink || '')],
       ['updatedAt', new Date().toISOString()]
     ];
@@ -326,12 +326,12 @@ function readSettings_(ss) {
   }
 
   // Pengaturan Watermark
-  if (out.watermarkEnabled !== undefined) {
+  if (out.watermarkEnabled !== undefined && out.watermarkEnabled !== '') {
     out.watermarkEnabled = String(out.watermarkEnabled).toLowerCase() !== 'false';
   } else {
     out.watermarkEnabled = true;
   }
-  if (!out.watermarkText) {
+  if (out.watermarkText === undefined) {
     out.watermarkText = 'Powered by Intisari';
   }
 

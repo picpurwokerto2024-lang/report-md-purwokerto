@@ -12,11 +12,14 @@ import PWAInstallModal from './components/PWAInstallModal';
 import PWAInstallBanner from './components/PWAInstallBanner';
 import OfflineIndicator from './components/OfflineIndicator';
 import { usePWAInstall } from './hooks/usePWAInstall';
+import { getInitialSettingsFromStorage, unpackSettingsFromCloud } from './utils/settingsSync';
 import { Search, SlidersHorizontal, RefreshCw, Clock, Smartphone, Download, Sparkles, X } from 'lucide-react';
 
 export default function App() {
   const [menus, setMenus] = useState<MenuItem[]>(INITIAL_MENUS);
-  const [settings, setSettings] = useState<SiteSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<SiteSettings>(() => getInitialSettingsFromStorage());
+  const settingsRef = useRef<SiteSettings>(settings);
+  const lastAdminSaveAtRef = useRef<number>(0);
   const [cmsStatus, setCmsStatus] = useState<{ text: string; state: 'ok' | 'loading' | 'offline' }>({
     text: 'Memuat data...',
     state: 'loading',
@@ -50,16 +53,26 @@ export default function App() {
     return () => clearInterval(clockTimer);
   }, []);
 
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
   // Concurrency guard and failure counters for network resilience on cellular data
   const isFetchingRef = useRef(false);
   const failCountRef = useRef(0);
 
   // Load CMS Data from Google Apps Script with dual-transport (Fetch + JSONP) & smart cache retention
-  const loadCMS = async (force = false) => {
+  const loadCMS = async (force = false, manual = false) => {
+    // Skip automatic background polling right after an Admin edit so in-flight Google Sheets writes finish cleanly
+    if (force && !manual && Date.now() - lastAdminSaveAtRef.current < 15000) {
+      return;
+    }
+
     // Prevent overlapping requests that choke mobile/cellular connections
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
-    if (!force) setIsRefreshing(true);
+    const fetchStartedAt = Date.now();
+    if (!force || manual) setIsRefreshing(true);
 
     try {
       // 1. Immediately read cache first if available so UI is instantly responsive
@@ -70,7 +83,14 @@ export default function App() {
             const parsed = JSON.parse(cached);
             if (parsed.data && Array.isArray(parsed.data) && parsed.data.length > 0) {
               setMenus(parsed.data);
-              if (parsed.settings) setSettings((prev) => ({ ...prev, ...parsed.settings }));
+              if (parsed.settings) {
+                const unpackedCached = unpackSettingsFromCloud(
+                  parsed.settings,
+                  settingsRef.current
+                );
+                settingsRef.current = unpackedCached;
+                setSettings(unpackedCached);
+              }
               if (parsed.time) setLastSyncDate(new Date(parsed.time));
               setCmsStatus({ text: 'CMS Aktif', state: 'ok' });
             }
@@ -146,6 +166,13 @@ export default function App() {
       // 4. Process successful response
       if (json && json.ok && Array.isArray(json.menus) && json.menus.length > 0) {
         failCountRef.current = 0; // Reset consecutive failures
+
+        // Ignore stale network response if Admin updated data while this fetch was in-flight
+        if (lastAdminSaveAtRef.current > fetchStartedAt || isAdminOpenRef.current) {
+          setCmsStatus({ text: 'CMS Aktif', state: 'ok' });
+          return;
+        }
+
         const normalized = json.menus.map((m: MenuItem, idx: number) => ({
           nama: m.nama || 'Laporan MD',
           link: m.link || '#',
@@ -157,18 +184,12 @@ export default function App() {
         }));
 
         setMenus(normalized);
-        if (json.settings) {
-          setSettings((prev) => ({
-            ...prev,
-            ...json.settings,
-            banners:
-              json.settings.banners && Array.isArray(json.settings.banners) && json.settings.banners.length > 0
-                ? json.settings.banners
-                : prev.banners && prev.banners.length > 0
-                ? prev.banners
-                : DEFAULT_BANNERS,
-          }));
-        }
+        const mergedSettings = json.settings
+          ? unpackSettingsFromCloud(json.settings, settingsRef.current)
+          : settingsRef.current;
+
+        settingsRef.current = mergedSettings;
+        setSettings(mergedSettings);
 
         const now = new Date();
         setLastSyncDate(now);
@@ -178,7 +199,7 @@ export default function App() {
           JSON.stringify({
             time: now.getTime(),
             data: normalized,
-            settings: json.settings || {},
+            settings: mergedSettings,
           })
         );
         setCmsStatus({ text: 'CMS Aktif', state: 'ok' });
@@ -244,7 +265,11 @@ export default function App() {
       channel.onmessage = (event) => {
         if (event.data?.type === 'SYNC_DATA') {
           if (event.data.menus) setMenus(event.data.menus);
-          if (event.data.settings) setSettings(event.data.settings);
+          if (event.data.settings) {
+            const synced = unpackSettingsFromCloud(event.data.settings, settingsRef.current);
+            settingsRef.current = synced;
+            setSettings(synced);
+          }
           setLastSyncDate(new Date());
           setCmsStatus({ text: 'CMS Aktif', state: 'ok' });
         }
@@ -257,7 +282,11 @@ export default function App() {
         try {
           const parsed = JSON.parse(e.newValue);
           if (parsed.data && Array.isArray(parsed.data)) setMenus(parsed.data);
-          if (parsed.settings) setSettings((prev) => ({ ...prev, ...parsed.settings }));
+          if (parsed.settings) {
+            const synced = unpackSettingsFromCloud(parsed.settings, settingsRef.current);
+            settingsRef.current = synced;
+            setSettings(synced);
+          }
           setLastSyncDate(new Date());
         } catch {}
       }
@@ -317,7 +346,9 @@ export default function App() {
 
   // Data update from Admin modal
   const handleUpdateFromAdmin = (newMenus: MenuItem[], newSettings: SiteSettings) => {
+    lastAdminSaveAtRef.current = Date.now();
     setMenus(newMenus);
+    settingsRef.current = newSettings;
     setSettings(newSettings);
     setCmsStatus({ text: 'CMS Diperbarui', state: 'ok' });
     setLastSyncDate(new Date());
@@ -403,7 +434,7 @@ export default function App() {
 
               <button
                 type="button"
-                onClick={() => loadCMS(true)}
+                onClick={() => loadCMS(true, true)}
                 title="Klik untuk segarkan data dari server"
                 className={`p-1 sm:p-1.5 rounded-full text-blue-700 bg-blue-100/70 hover:bg-blue-200 transition-all cursor-pointer shadow-2xs ${
                   isRefreshing ? 'animate-spin text-blue-600' : 'hover:rotate-45'
@@ -552,7 +583,7 @@ export default function App() {
         <div className="flex items-center justify-center pt-1 pb-2">
           <button
             type="button"
-            onClick={() => loadCMS(true)}
+            onClick={() => loadCMS(true, true)}
             disabled={isRefreshing}
             className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-[#1244a5] transition-colors cursor-pointer py-1 px-3 rounded-full hover:bg-white/60"
           >
@@ -564,34 +595,35 @@ export default function App() {
         {/* ============================================================== */}
         {/* WATERMARK ("Powered by Intisari") - Can be toggled & customized in Admin */}
         {/* ============================================================== */}
-        {settings.watermarkEnabled !== false && (
-          <div className="flex flex-col items-center justify-center pt-0 pb-4 select-none">
-            {settings.watermarkLink ? (
-              <a
-                href={settings.watermarkLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Buka tautan"
-                className="group inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-white/70 hover:bg-white text-slate-500 hover:text-[#1244a5] text-[11px] sm:text-xs font-semibold border border-blue-100 shadow-2xs backdrop-blur-xs transition-all hover:shadow-xs active:scale-98"
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 group-hover:bg-emerald-500 transition-colors" />
-                <span className="tracking-wide">
-                  {settings.watermarkText || 'Powered by Intisari'}
-                </span>
-                <span className="text-[10px] text-blue-400 group-hover:translate-x-0.5 transition-transform">
-                  &rarr;
-                </span>
-              </a>
-            ) : (
-              <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-white/60 text-slate-500 text-[11px] sm:text-xs font-semibold border border-blue-100/70 shadow-2xs backdrop-blur-xs">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-500/80" />
-                <span className="tracking-wide">
-                  {settings.watermarkText || 'Powered by Intisari'}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
+        {settings.watermarkEnabled !== false &&
+          Boolean((settings.watermarkText ?? '').trim()) && (
+            <div className="flex flex-col items-center justify-center pt-0 pb-4 select-none">
+              {settings.watermarkLink ? (
+                <a
+                  href={settings.watermarkLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Buka tautan"
+                  className="group inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-white/70 hover:bg-white text-slate-500 hover:text-[#1244a5] text-[11px] sm:text-xs font-semibold border border-blue-100 shadow-2xs backdrop-blur-xs transition-all hover:shadow-xs active:scale-98"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 group-hover:bg-emerald-500 transition-colors" />
+                  <span className="tracking-wide">
+                    {(settings.watermarkText ?? '').trim()}
+                  </span>
+                  <span className="text-[10px] text-blue-400 group-hover:translate-x-0.5 transition-transform">
+                    &rarr;
+                  </span>
+                </a>
+              ) : (
+                <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-white/60 text-slate-500 text-[11px] sm:text-xs font-semibold border border-blue-100/70 shadow-2xs backdrop-blur-xs">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500/80" />
+                  <span className="tracking-wide">
+                    {(settings.watermarkText ?? '').trim()}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
       </div>
 
       {/* ============================================================== */}
@@ -612,6 +644,7 @@ export default function App() {
         onClose={() => setIsDetailOpen(false)}
         updateDate={formattedDate}
         watermarkText={settings.watermarkText}
+        watermarkEnabled={settings.watermarkEnabled}
       />
 
       <AdminModal

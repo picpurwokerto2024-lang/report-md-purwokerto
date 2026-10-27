@@ -5,15 +5,20 @@ interface DetailModalProps {
   onClose: () => void;
   updateDate?: string;
   watermarkText?: string;
+  watermarkEnabled?: boolean;
 }
 
 export default function DetailModal({
   isOpen,
   onClose,
   updateDate = '13 Okt 2026',
-  watermarkText = 'Powered by Intisari',
+  watermarkText,
+  watermarkEnabled = true,
 }: DetailModalProps) {
   if (!isOpen) return null;
+
+  const resolvedWatermark = (watermarkText ?? '').trim();
+  const showWatermark = watermarkEnabled !== false && resolvedWatermark.length > 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
@@ -78,7 +83,7 @@ export default function DetailModal({
 
         <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between">
           <span className="text-[11px] text-slate-400 font-medium">
-            {watermarkText || 'Powered by Intisari'}
+            {showWatermark ? resolvedWatermark : ''}
           </span>
           <button
             type="button"

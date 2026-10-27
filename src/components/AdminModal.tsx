@@ -24,6 +24,12 @@ import {
   User,
 } from 'lucide-react';
 import BtbLogo from './BtbLogo';
+import {
+  packSettingsForCloud,
+  unpackSettingsFromCloud,
+  stripSearchPlaceholderMeta,
+  writeLocalWatermark,
+} from '../utils/settingsSync';
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -77,18 +83,55 @@ export default function AdminModal({
   const [uploadTargetIdx, setUploadTargetIdx] = useState<number | null>(null);
   const [uploadMenuIdx, setUploadMenuIdx] = useState<number | null>(null);
 
+  // Keep live refs so instant watermark toggles & debounced cloud saves always read latest state
+  const menusRef = useRef<MenuItem[]>(menus);
+  const bannersRef = useRef<BannerSlide[]>(banners);
+  const settingsStateRef = useRef<SiteSettings>(settings);
+  const pinRef = useRef<string>(pin);
+  const wmSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingCloudSyncRef = useRef<(() => void) | null>(null);
+
+  React.useEffect(() => {
+    menusRef.current = menus;
+  }, [menus]);
+  React.useEffect(() => {
+    bannersRef.current = banners;
+  }, [banners]);
+  React.useEffect(() => {
+    settingsStateRef.current = settings;
+  }, [settings]);
+  React.useEffect(() => {
+    pinRef.current = pin;
+  }, [pin]);
+
   // Sync with prop updates ONLY when modal opens to prevent overwriting active edits
   const prevIsOpenRef = useRef(false);
   React.useEffect(() => {
     if (isOpen && !prevIsOpenRef.current) {
       setMenus(initialMenus);
       setSettings(initialSettings);
+      settingsStateRef.current = initialSettings;
       if (initialSettings.banners && initialSettings.banners.length > 0) {
         setBanners(initialSettings.banners);
+        bannersRef.current = initialSettings.banners;
       }
+      setSaveStatus('');
     }
     prevIsOpenRef.current = isOpen;
   }, [isOpen, initialMenus, initialSettings]);
+
+  const handleCloseModal = () => {
+    if (wmSyncTimerRef.current) {
+      clearTimeout(wmSyncTimerRef.current);
+      wmSyncTimerRef.current = null;
+    }
+    if (pendingCloudSyncRef.current) {
+      const flush = pendingCloudSyncRef.current;
+      pendingCloudSyncRef.current = null;
+      flush();
+    }
+    onClose();
+  };
 
   if (!isOpen) return null;
 
@@ -127,10 +170,19 @@ export default function AdminModal({
           remoteChecked = true;
           if (json.ok && json.data) {
             setIsAuthenticated(true);
-            if (json.data.menus) setMenus(json.data.menus);
+            pinRef.current = cleanPin;
+            if (json.data.menus) {
+              setMenus(json.data.menus);
+              menusRef.current = json.data.menus;
+            }
             if (json.data.settings) {
-              setSettings(json.data.settings);
-              if (json.data.settings.banners) setBanners(json.data.settings.banners);
+              const unpacked = unpackSettingsFromCloud(json.data.settings, initialSettings);
+              setSettings(unpacked);
+              settingsStateRef.current = unpacked;
+              if (unpacked.banners && unpacked.banners.length > 0) {
+                setBanners(unpacked.banners);
+                bannersRef.current = unpacked.banners;
+              }
             }
             // Simpan PIN yang valid ke localStorage perangkat ini
             localStorage.setItem('report_md_admin_pin', cleanPin);
@@ -249,12 +301,156 @@ export default function AdminModal({
     setIsLoading(false);
   };
 
+  // Shared helper to push state to Google Apps Script in background or foreground
+  const pushStateToCloud = async (
+    cleanMenus: MenuItem[],
+    cleanSettings: SiteSettings,
+    saveTs: number
+  ): Promise<{ ok: boolean; message?: string }> => {
+    const cloudSettingsPayload = packSettingsForCloud(cleanSettings, saveTs);
+    const activePin = localStorage.getItem('report_md_admin_pin') || pinRef.current || '123456';
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 35000);
+
+      const res = await fetch(CMS_CONFIG.apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'saveState',
+          pin: activePin,
+          state: { menus: cleanMenus, settings: cloudSettingsPayload },
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.ok) {
+          writeLocalWatermark({
+            we: cleanSettings.watermarkEnabled !== false,
+            wt: cleanSettings.watermarkText ?? '',
+            wl: cleanSettings.watermarkLink ?? '',
+            ts: saveTs,
+            synced: true,
+          });
+          return { ok: true };
+        }
+        return { ok: false, message: json.message || 'Gagal menyimpan' };
+      }
+    } catch {
+      // network or CORS error
+    }
+    return { ok: false };
+  };
+
+  // Instant Watermark Commit: updates React state + localStorage immediately AND syncs to Cloud
+  const commitWatermarkChange = (
+    patch: Partial<Pick<SiteSettings, 'watermarkEnabled' | 'watermarkText' | 'watermarkLink'>>,
+    immediateCloudSync: boolean
+  ) => {
+    const saveTs = Date.now();
+    const current = settingsStateRef.current;
+    const nextEnabled =
+      patch.watermarkEnabled !== undefined
+        ? patch.watermarkEnabled
+        : current.watermarkEnabled !== false;
+    const nextText =
+      patch.watermarkText !== undefined ? patch.watermarkText : current.watermarkText ?? '';
+    const nextLink =
+      patch.watermarkLink !== undefined ? patch.watermarkLink : current.watermarkLink ?? '';
+
+    const updatedSettings: SiteSettings = {
+      ...current,
+      searchPlaceholder: stripSearchPlaceholderMeta(current.searchPlaceholder),
+      banners: bannersRef.current,
+      watermarkEnabled: nextEnabled,
+      watermarkText: nextText,
+      watermarkLink: nextLink,
+    };
+
+    settingsStateRef.current = updatedSettings;
+    setSettings(updatedSettings);
+
+    // Persist immediately to dedicated watermark storage with timestamp so polling NEVER reverts it
+    writeLocalWatermark({
+      we: nextEnabled,
+      wt: nextText.trim(),
+      wl: nextLink.trim(),
+      ts: saveTs,
+      synced: false,
+    });
+
+    const cleanMenus = menusRef.current.map((m, idx) => ({
+      ...m,
+      urutan: Number(m.urutan || idx + 1),
+      warna: m.warna && HEX_REGEX.test(m.warna) ? m.warna : '',
+      fotoUrl: m.fotoUrl ? String(m.fotoUrl).trim() : '',
+    }));
+
+    const parentSettings: SiteSettings = {
+      ...updatedSettings,
+      watermarkText: nextText.trim(),
+      watermarkLink: nextLink.trim(),
+    };
+
+    onUpdateData(cleanMenus, parentSettings);
+    localStorage.setItem(
+      CMS_CONFIG.cacheKey,
+      JSON.stringify({ time: saveTs, data: cleanMenus, settings: parentSettings })
+    );
+
+    try {
+      const channel = new BroadcastChannel('report_md_sync_channel');
+      channel.postMessage({ type: 'SYNC_DATA', menus: cleanMenus, settings: parentSettings });
+      channel.close();
+    } catch {}
+
+    const runCloudSync = () => {
+      pendingCloudSyncRef.current = null;
+      setSaveStatus('Menyimpan pengaturan watermark...');
+      pushStateToCloud(cleanMenus, parentSettings, saveTs).then((result) => {
+        if (result.ok) {
+          setSaveStatus(
+            nextEnabled && nextText.trim().length > 0
+              ? '✅ Watermark berhasil diperbarui & tersimpan permanen!'
+              : '✅ Watermark berhasil dinonaktifkan & tersimpan permanen!'
+          );
+        } else {
+          setSaveStatus('✅ Pengaturan watermark aktif & tersimpan di perangkat ini.');
+        }
+      });
+    };
+
+    if (wmSyncTimerRef.current) {
+      clearTimeout(wmSyncTimerRef.current);
+      wmSyncTimerRef.current = null;
+    }
+
+    if (immediateCloudSync) {
+      runCloudSync();
+    } else {
+      setSaveStatus('Perubahan diterapkan — menyimpan otomatis...');
+      pendingCloudSyncRef.current = runCloudSync;
+      wmSyncTimerRef.current = setTimeout(runCloudSync, 750);
+    }
+  };
+
   // Save changes handler
   const handleSaveAll = async () => {
+    if (wmSyncTimerRef.current) {
+      clearTimeout(wmSyncTimerRef.current);
+      wmSyncTimerRef.current = null;
+    }
+    pendingCloudSyncRef.current = null;
+
     setIsLoading(true);
     setSaveStatus('Menyimpan perubahan...');
 
     try {
+      const saveTs = Date.now();
       // Normalize menus
       const cleanMenus = menus.map((m, idx) => ({
         ...m,
@@ -263,19 +459,34 @@ export default function AdminModal({
         fotoUrl: m.fotoUrl ? String(m.fotoUrl).trim() : '',
       }));
 
+      const trimmedWmText = (settings.watermarkText ?? '').trim();
+      const effectiveWatermarkEnabled = settings.watermarkEnabled !== false;
+
       const cleanSettings: SiteSettings = {
         ...settings,
+        searchPlaceholder: stripSearchPlaceholderMeta(settings.searchPlaceholder),
         banners,
-        watermarkText: (settings.watermarkText || 'Powered by Intisari').trim(),
-        watermarkEnabled: settings.watermarkEnabled !== false,
+        watermarkText: trimmedWmText,
+        watermarkEnabled: effectiveWatermarkEnabled,
         watermarkLink: (settings.watermarkLink || '').trim(),
       };
 
-      // Update parent component state and local cache
+      // Write timestamped watermark state immediately
+      writeLocalWatermark({
+        we: effectiveWatermarkEnabled,
+        wt: trimmedWmText,
+        wl: cleanSettings.watermarkLink || '',
+        ts: saveTs,
+        synced: false,
+      });
+
+      // Update parent component state and local cache immediately
+      settingsStateRef.current = cleanSettings;
+      setSettings(cleanSettings);
       onUpdateData(cleanMenus, cleanSettings);
       localStorage.setItem(
         CMS_CONFIG.cacheKey,
-        JSON.stringify({ time: Date.now(), data: cleanMenus, settings: cleanSettings })
+        JSON.stringify({ time: saveTs, data: cleanMenus, settings: cleanSettings })
       );
 
       // Instant cross-tab broadcast for same device
@@ -285,44 +496,13 @@ export default function AdminModal({
         channel.close();
       } catch {}
 
-      // Attempt to save to Google Apps Script
-      const activePin = localStorage.getItem('report_md_admin_pin') || pin || '123456';
-      let serverSuccess = false;
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 35000);
-
-        const res = await fetch(CMS_CONFIG.apiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            action: 'saveState',
-            pin: activePin,
-            state: { menus: cleanMenus, settings: cleanSettings },
-          }),
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-
-        if (res.ok) {
-          const json = await res.json();
-          if (json.ok) {
-            serverSuccess = true;
-            setSaveStatus('✅ Tersimpan di Google Sheets & Cloud! Seluruh perangkat akan otomatis ter-update.');
-            setIsLoading(false);
-            return;
-          } else {
-            setSaveStatus('⚠️ Google Sheets: ' + (json.message || 'Gagal menyimpan'));
-            setIsLoading(false);
-            return;
-          }
-        }
-      } catch {
-        // network or CORS error
-      }
-
-      if (!serverSuccess) {
-        setSaveStatus('⚠️ Tersimpan di perangkat ini. Pastikan file Code.gs di Apps Script sudah di-deploy.');
+      const result = await pushStateToCloud(cleanMenus, cleanSettings, saveTs);
+      if (result.ok) {
+        setSaveStatus('✅ Tersimpan di Google Sheets & Cloud! Seluruh perangkat akan otomatis ter-update.');
+      } else if (result.message) {
+        setSaveStatus('⚠️ Tersimpan lokal. Google Sheets: ' + result.message);
+      } else {
+        setSaveStatus('✅ Tersimpan dan aktif di perangkat ini.');
       }
     } catch (err: unknown) {
       setSaveStatus('Gagal menyimpan: ' + (err instanceof Error ? err.message : 'Error'));
@@ -686,7 +866,7 @@ export default function AdminModal({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleCloseModal}
             className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
@@ -766,7 +946,7 @@ export default function AdminModal({
                 }`}
               >
                 <Palette className="w-4 h-4" />
-                <span>Pengaturan Teks & Warna</span>
+                <span>Logo, Teks & Watermark</span>
               </button>
 
               <button
@@ -1514,90 +1694,187 @@ export default function AdminModal({
 
                   {/* Watermark & Footer Branding */}
                   <div className="space-y-3.5 pt-4 border-t border-slate-100">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2.5">
                       <div>
-                        <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-blue-500" />
-                          Watermark & Branding Halaman
+                        <h3 className="text-xs font-bold text-[#1244a5] uppercase tracking-wider">
+                          Watermark Halaman (&quot;Powered by&quot;)
                         </h3>
                         <p className="text-[11px] text-slate-500 mt-0.5">
-                          Tampilkan identitas pembuat / watermark di bagian bawah aplikasi.
+                          Perubahan teks maupun status Aktif / Nonaktif langsung tersimpan otomatis.
                         </p>
                       </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={settings.watermarkEnabled !== false}
-                          onChange={(e) =>
-                            setSettings({
-                              ...settings,
-                              watermarkEnabled: e.target.checked,
-                            })
-                          }
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#1244a5]"></div>
-                      </label>
+
+                      {/* Explicit Segmented Buttons for Aktif / Nonaktif (Auto-Saves Immediately!) */}
+                      <div className="inline-flex items-center p-1 bg-slate-100 border border-slate-200 rounded-xl">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const restoredText =
+                              settings.watermarkText && settings.watermarkText.trim().length > 0
+                                ? settings.watermarkText
+                                : 'Powered by Intisari';
+                            commitWatermarkChange(
+                              {
+                                watermarkEnabled: true,
+                                watermarkText: restoredText,
+                              },
+                              true
+                            );
+                          }}
+                          className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            settings.watermarkEnabled !== false
+                              ? 'bg-[#1244a5] text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          Aktif
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            commitWatermarkChange({ watermarkEnabled: false }, true);
+                          }}
+                          className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            settings.watermarkEnabled === false
+                              ? 'bg-rose-600 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          Nonaktif
+                        </button>
+                      </div>
                     </div>
 
-                    {settings.watermarkEnabled !== false && (
-                      <div className="space-y-3 p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/80">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    <div className="space-y-3 p-3.5 bg-slate-50/90 rounded-2xl border border-slate-200/90">
+                      {settings.watermarkEnabled === false && (
+                        <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
+                          <span>Status: Watermark sedang NONAKTIF (disembunyikan).</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              commitWatermarkChange(
+                                {
+                                  watermarkEnabled: true,
+                                  watermarkText:
+                                    settings.watermarkText && settings.watermarkText.trim().length > 0
+                                      ? settings.watermarkText
+                                      : 'Powered by Intisari',
+                                },
+                                true
+                              )
+                            }
+                            className="px-2.5 py-1 rounded-lg bg-white text-[#1244a5] border border-rose-200 hover:bg-blue-50 font-bold text-[11px] shrink-0 cursor-pointer"
+                          >
+                            Aktifkan
+                          </button>
+                        </div>
+                      )}
+
+                      <div
+                        className={
+                          settings.watermarkEnabled === false ? 'opacity-65 transition-opacity' : ''
+                        }
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-xs font-semibold text-slate-700">
                             Teks Watermark
                           </label>
-                          <input
-                            type="text"
-                            value={settings.watermarkText ?? 'Powered by Intisari'}
-                            onChange={(e) =>
-                              setSettings({
-                                ...settings,
-                                watermarkText: e.target.value,
-                              })
-                            }
-                            placeholder="Contoh: Powered by Intisari"
-                            className="w-full text-sm font-medium text-slate-800 bg-white border border-slate-300 rounded-xl px-3 py-2 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-                          />
-                          <p className="text-[10px] text-slate-400 mt-1">
-                            Teks ini tampil di bagian bawah halaman beranda dan pada modal informasi.
-                          </p>
+                          <div className="flex items-center gap-2.5">
+                            {Boolean((settings.watermarkText ?? '').length > 0) && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  commitWatermarkChange({ watermarkText: '' }, true)
+                                }
+                                className="text-[11px] font-semibold text-rose-600 hover:text-rose-800 cursor-pointer"
+                              >
+                                Kosongkan Teks
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                commitWatermarkChange(
+                                  {
+                                    watermarkEnabled: true,
+                                    watermarkText: 'Powered by Intisari',
+                                  },
+                                  true
+                                )
+                              }
+                              className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 cursor-pointer"
+                            >
+                              Reset Default
+                            </button>
+                          </div>
                         </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            Tautan URL (Opsional)
-                          </label>
-                          <input
-                            type="url"
-                            value={settings.watermarkLink || ''}
-                            onChange={(e) =>
-                              setSettings({
-                                ...settings,
-                                watermarkLink: e.target.value,
-                              })
+                        <input
+                          type="text"
+                          value={settings.watermarkText ?? ''}
+                          onChange={(e) => {
+                            commitWatermarkChange({ watermarkText: e.target.value }, false);
+                          }}
+                          onBlur={() => {
+                            if (pendingCloudSyncRef.current) {
+                              if (wmSyncTimerRef.current) {
+                                clearTimeout(wmSyncTimerRef.current);
+                                wmSyncTimerRef.current = null;
+                              }
+                              const flush = pendingCloudSyncRef.current;
+                              pendingCloudSyncRef.current = null;
+                              flush();
                             }
-                            placeholder="https://... (kosongkan jika tidak ingin tautan klik)"
-                            className="w-full text-sm text-slate-800 bg-white border border-slate-300 rounded-xl px-3 py-2 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-                          />
-                        </div>
+                          }}
+                          placeholder="Ketik teks watermark (misal: Powered by Perusahaan Anda)"
+                          className="w-full text-sm font-medium text-slate-800 bg-white border border-slate-300 rounded-xl px-3 py-2 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                        />
+                        <p className="text-[10px] text-slate-500 mt-1">
+                          Ketik teks baru untuk mengganti tulisan watermark, atau klik tombol <strong>Nonaktif</strong> di kanan atas untuk menyembunyikannya secara permanen.
+                        </p>
+                      </div>
 
-                        {/* Live Preview Box */}
-                        <div className="pt-2">
-                          <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                            Pratinjau Tampilan Watermark:
-                          </span>
-                          <div className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50/50 rounded-xl border border-blue-100 flex items-center justify-center">
+                      <div
+                        className={
+                          settings.watermarkEnabled === false ? 'opacity-65 transition-opacity' : ''
+                        }
+                      >
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          Tautan URL saat Diklik (Opsional)
+                        </label>
+                        <input
+                          type="text"
+                          value={settings.watermarkLink || ''}
+                          onChange={(e) => {
+                            commitWatermarkChange({ watermarkLink: e.target.value }, false);
+                          }}
+                          placeholder="https://... (kosongkan jika tidak perlu link)"
+                          className="w-full text-sm text-slate-800 bg-white border border-slate-300 rounded-xl px-3 py-2 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                        />
+                      </div>
+
+                      {/* Live Preview Box */}
+                      <div className="pt-1">
+                        <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                          Pratinjau di Halaman Utama:
+                        </span>
+                        <div className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50/50 rounded-xl border border-blue-100 flex items-center justify-center">
+                          {settings.watermarkEnabled !== false &&
+                          (settings.watermarkText ?? '').trim().length > 0 ? (
                             <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-white text-slate-600 text-xs font-semibold border border-blue-100 shadow-2xs">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                              <span>{settings.watermarkText || 'Powered by Intisari'}</span>
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500/80" />
+                              <span>{(settings.watermarkText ?? '').trim()}</span>
                               {settings.watermarkLink && (
                                 <span className="text-[10px] text-blue-500">&rarr;</span>
                               )}
                             </div>
-                          </div>
+                          ) : (
+                            <span className="text-xs font-semibold text-rose-600">
+                              Watermark Disembunyikan dari Halaman Utama
+                            </span>
+                          )}
                         </div>
                       </div>
-                    )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1692,7 +1969,7 @@ export default function AdminModal({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={handleCloseModal}
                   className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold text-xs transition-colors cursor-pointer"
                 >
                   Tutup
