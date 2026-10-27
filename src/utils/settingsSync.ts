@@ -3,6 +3,45 @@ import { CMS_CONFIG, DEFAULT_BANNERS, DEFAULT_SETTINGS } from '../constants';
 
 const META_DELIMITER = '\u2063__CFG__:';
 export const WATERMARK_STORAGE_KEY = 'report_md_watermark_v3';
+export const CMS_SYNC_META_KEY = 'report_md_cms_sync_v1';
+
+export interface LocalCmsSyncMeta {
+  ts: number;
+  synced: boolean;
+}
+
+/**
+ * Detects whether a base64 data:image URL was truncated at Google Sheets' 3-cell (135,000 char) limit.
+ */
+export const isTruncatedDataImageUrl = (url?: string): boolean => {
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  return trimmed.startsWith('data:image/') && trimmed.length >= 134900;
+};
+
+export const readLocalCmsSync = (): LocalCmsSyncMeta | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(CMS_SYNC_META_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.ts === 'number') {
+      return { ts: parsed.ts, synced: Boolean(parsed.synced) };
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return null;
+};
+
+export const writeLocalCmsSync = (meta: LocalCmsSyncMeta): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(CMS_SYNC_META_KEY, JSON.stringify(meta));
+  } catch {
+    // ignore storage errors
+  }
+};
 
 interface PackedUiMeta {
   we?: boolean;

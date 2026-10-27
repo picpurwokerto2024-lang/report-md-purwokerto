@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type SyntheticEvent } from 'react';
 import { BannerSlide } from '../types';
 import { DEFAULT_BANNERS } from '../constants';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -48,6 +48,11 @@ const getLandscapeAspectClass = (ratio: number | null): string => {
   return 'aspect-[28/10]';
 };
 
+const makeSlideSignature = (slide: BannerSlide, idx: number): string => {
+  const url = (slide.imageUrl || '').trim();
+  return `${slide.id || idx}:${url.length}:${url.slice(-24)}`;
+};
+
 export default function HeroBanner({
   banners = DEFAULT_BANNERS,
   autoSlideInterval = 4,
@@ -57,12 +62,30 @@ export default function HeroBanner({
   const [isPaused, setIsPaused] = useState(false);
   const [primaryRatio, setPrimaryRatio] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const prevSignaturesRef = useRef<string[] | null>(null);
 
   // Reset measured ratio when primary slide image changes
   const firstSlideUrl = slides[0]?.imageUrl;
   useEffect(() => {
     setPrimaryRatio(null);
   }, [firstSlideUrl]);
+
+  // Immediately preview newly added or newly updated banner slide so Admin sees changes right away
+  useEffect(() => {
+    const nextSigs = slides.map((s, idx) => makeSlideSignature(s, idx));
+    const prevSigs = prevSignaturesRef.current;
+    if (prevSigs !== null) {
+      if (nextSigs.length > prevSigs.length) {
+        setCurrentIndex(nextSigs.length - 1);
+      } else {
+        const changedIdx = nextSigs.findIndex((sig, idx) => sig !== prevSigs[idx]);
+        if (changedIdx >= 0) {
+          setCurrentIndex(changedIdx);
+        }
+      }
+    }
+    prevSignaturesRef.current = nextSigs;
+  }, [slides]);
 
   // Auto-slide effect
   useEffect(() => {
@@ -93,6 +116,22 @@ export default function HeroBanner({
     setCurrentIndex((prev) => (prev + 1) % slides.length);
   };
 
+  const handleImgFallback = (
+    e: SyntheticEvent<HTMLImageElement>,
+    rawSlideUrl?: string
+  ) => {
+    const target = e.currentTarget;
+    const driveMatch =
+      !rawSlideUrl?.startsWith('data:image/') && rawSlideUrl?.match(/([a-zA-Z0-9_-]{25,})/);
+    if (driveMatch && !target.src.includes('uc?export=view')) {
+      target.src = `https://drive.google.com/uc?export=view&id=${driveMatch[1]}`;
+      return;
+    }
+    if (target.src !== DEFAULT_BANNERS[0].imageUrl) {
+      target.src = DEFAULT_BANNERS[0].imageUrl;
+    }
+  };
+
   const aspectClass = getLandscapeAspectClass(primaryRatio);
 
   return (
@@ -106,7 +145,8 @@ export default function HeroBanner({
       {/* Slides Container */}
       {slides.map((slide, index) => {
         const isActive = index === currentIndex;
-        const imgUrl = normalizeImageUrl(slide.imageUrl);
+        const imgUrl = normalizeImageUrl(slide.imageUrl) || DEFAULT_BANNERS[0].imageUrl;
+        const imgKey = makeSlideSignature(slide, index);
         const hasTextContent = Boolean(
           (slide.scriptText && slide.scriptText.trim()) ||
           (slide.title && slide.title.trim()) ||
@@ -126,17 +166,20 @@ export default function HeroBanner({
             {/* Soft Ambient Backdrop Layer so uncropped landscape banners never show black bars */}
             {useUncroppedContain && (
               <img
+                key={`bg-${imgKey}`}
                 src={imgUrl}
                 alt=""
                 aria-hidden="true"
                 decoding="async"
                 referrerPolicy="no-referrer"
+                onError={(e) => handleImgFallback(e, slide.imageUrl)}
                 className="absolute inset-0 w-full h-full object-cover object-center scale-110 blur-xl opacity-65 brightness-75 pointer-events-none"
               />
             )}
 
             {/* Crisp HD Foreground Banner Image (No scale-105 crop/blur) */}
             <img
+              key={`fg-${imgKey}`}
               src={imgUrl}
               alt={slide.title || 'Banner MD Purwokerto'}
               decoding="async"
@@ -150,19 +193,7 @@ export default function HeroBanner({
                   }
                 }
               }}
-              onError={(e) => {
-                const target = e.target as HTMLImageElement;
-                // If it was a drive URL using lh3, try uc export fallback
-                const driveMatch = slide.imageUrl?.match(/([a-zA-Z0-9_-]{25,})/);
-                if (driveMatch && !target.src.includes('uc?export=view')) {
-                  target.src = `https://drive.google.com/uc?export=view&id=${driveMatch[1]}`;
-                  return;
-                }
-                // Fallback to default banner if custom URL fails
-                if (target.src !== DEFAULT_BANNERS[0].imageUrl) {
-                  target.src = DEFAULT_BANNERS[0].imageUrl;
-                }
-              }}
+              onError={(e) => handleImgFallback(e, slide.imageUrl)}
               className={`relative z-[1] w-full h-full ${
                 useUncroppedContain ? 'object-contain' : 'object-cover'
               } object-center`}

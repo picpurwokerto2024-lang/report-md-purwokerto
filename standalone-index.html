@@ -1173,15 +1173,23 @@
       reader.onload = (e) => {
         img.src = e.target.result;
         img.onload = () => {
-          const tiers = [{ maxW: 1600, maxH: 900 }, { maxW: 1366, maxH: 768 }, { maxW: 1152, maxH: 648 }];
-          const qualities = [0.92, 0.86, 0.80, 0.74];
+          const MAX_CHARS = 124000;
+          const tiers = [
+            { maxW: 1600, maxH: 900 },
+            { maxW: 1366, maxH: 768 },
+            { maxW: 1200, maxH: 675 },
+            { maxW: 1024, maxH: 576 },
+            { maxW: 896, maxH: 504 },
+            { maxW: 768, maxH: 432 }
+          ];
+          const qualities = [0.90, 0.84, 0.78, 0.72, 0.65];
           let finalDataUrl = "";
 
-          for (const tier of tiers) {
+          const drawScaled = (mw, mh) => {
             let targetW = img.naturalWidth || img.width;
             let targetH = img.naturalHeight || img.height;
-            if (targetW > tier.maxW || targetH > tier.maxH) {
-              const r = Math.min(tier.maxW / targetW, tier.maxH / targetH);
+            if (targetW > mw || targetH > mh) {
+              const r = Math.min(mw / targetW, mh / targetH);
               targetW = Math.max(1, Math.round(targetW * r));
               targetH = Math.max(1, Math.round(targetH * r));
             }
@@ -1200,18 +1208,36 @@
             const canvas = document.createElement('canvas');
             canvas.width = targetW; canvas.height = targetH;
             const ctx = canvas.getContext('2d');
-            if (!ctx) continue;
-            ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-            ctx.drawImage(curSrc, 0, 0, targetW, targetH);
+            if (ctx) {
+              ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+              ctx.drawImage(curSrc, 0, 0, targetW, targetH);
+            }
+            return canvas;
+          };
 
+          for (const tier of tiers) {
+            const canvas = drawScaled(tier.maxW, tier.maxH);
             let matched = false;
             for (const q of qualities) {
               const wp = canvas.toDataURL('image/webp', q);
-              const cand = wp.startsWith('data:image/webp') ? wp : canvas.toDataURL('image/jpeg', q);
+              const hasWp = wp.startsWith('data:image/webp');
+              if (hasWp && wp.length <= MAX_CHARS) { finalDataUrl = wp; matched = true; break; }
+              const jpg = canvas.toDataURL('image/jpeg', q);
+              const cand = hasWp && wp.length <= jpg.length ? wp : jpg;
               finalDataUrl = cand;
-              if (cand.length <= 130000) { matched = true; break; }
+              if (cand.length <= MAX_CHARS) { matched = true; break; }
             }
             if (matched) break;
+          }
+
+          let curW = 680, curH = 382;
+          while (finalDataUrl.length > MAX_CHARS && curW >= 320) {
+            const canvas = drawScaled(curW, curH);
+            const wp = canvas.toDataURL('image/webp', 0.60);
+            const jpg = canvas.toDataURL('image/jpeg', 0.60);
+            finalDataUrl = wp.startsWith('data:image/webp') && wp.length <= jpg.length ? wp : jpg;
+            curW = Math.round(curW * 0.85);
+            curH = Math.round(curH * 0.85);
           }
 
           if (finalDataUrl) {

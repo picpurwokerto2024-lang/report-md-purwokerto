@@ -12,7 +12,11 @@ import PWAInstallModal from './components/PWAInstallModal';
 import PWAInstallBanner from './components/PWAInstallBanner';
 import OfflineIndicator from './components/OfflineIndicator';
 import { usePWAInstall } from './hooks/usePWAInstall';
-import { getInitialSettingsFromStorage, unpackSettingsFromCloud } from './utils/settingsSync';
+import {
+  getInitialSettingsFromStorage,
+  unpackSettingsFromCloud,
+  readLocalCmsSync,
+} from './utils/settingsSync';
 import { Search, SlidersHorizontal, RefreshCw, Clock, Smartphone, Download, Sparkles, X } from 'lucide-react';
 
 export default function App() {
@@ -63,8 +67,11 @@ export default function App() {
 
   // Load CMS Data from Google Apps Script with dual-transport (Fetch + JSONP) & smart cache retention
   const loadCMS = async (force = false, manual = false) => {
-    // Skip automatic background polling right after an Admin edit so in-flight Google Sheets writes finish cleanly
-    if (force && !manual && Date.now() - lastAdminSaveAtRef.current < 15000) {
+    // Skip automatic background polling right after an Admin edit or while a banner upload is still writing to Google Sheets
+    const localSync = readLocalCmsSync();
+    const hasPendingRecentSave =
+      Boolean(localSync && !localSync.synced && Date.now() - localSync.ts < 60000);
+    if (force && !manual && (Date.now() - lastAdminSaveAtRef.current < 30000 || hasPendingRecentSave)) {
       return;
     }
 

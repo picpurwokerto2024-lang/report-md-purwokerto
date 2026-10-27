@@ -29,6 +29,8 @@ import {
   unpackSettingsFromCloud,
   stripSearchPlaceholderMeta,
   writeLocalWatermark,
+  isTruncatedDataImageUrl,
+  writeLocalCmsSync,
 } from '../utils/settingsSync';
 
 interface AdminModalProps {
@@ -80,15 +82,20 @@ export default function AdminModal({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const logoFileInputRef = useRef<HTMLInputElement | null>(null);
   const menuPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const slideListEndRef = useRef<HTMLDivElement | null>(null);
   const [uploadTargetIdx, setUploadTargetIdx] = useState<number | null>(null);
   const [uploadMenuIdx, setUploadMenuIdx] = useState<number | null>(null);
+  const [confirmDeleteSlideIdx, setConfirmDeleteSlideIdx] = useState<number | null>(null);
+  const [confirmDeleteMenuIdx, setConfirmDeleteMenuIdx] = useState<number | null>(null);
+  const [brokenSlideIds, setBrokenSlideIds] = useState<Record<string, boolean>>({});
 
-  // Keep live refs so instant watermark toggles & debounced cloud saves always read latest state
+  // Keep live refs so instant watermark/banner toggles & debounced cloud saves always read latest state
   const menusRef = useRef<MenuItem[]>(menus);
   const bannersRef = useRef<BannerSlide[]>(banners);
   const settingsStateRef = useRef<SiteSettings>(settings);
   const pinRef = useRef<string>(pin);
   const wmSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bannerSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingCloudSyncRef = useRef<(() => void) | null>(null);
 
   React.useEffect(() => {
@@ -115,6 +122,9 @@ export default function AdminModal({
         setBanners(initialSettings.banners);
         bannersRef.current = initialSettings.banners;
       }
+      setConfirmDeleteSlideIdx(null);
+      setConfirmDeleteMenuIdx(null);
+      setBrokenSlideIds({});
       setSaveStatus('');
     }
     prevIsOpenRef.current = isOpen;
@@ -124,6 +134,10 @@ export default function AdminModal({
     if (wmSyncTimerRef.current) {
       clearTimeout(wmSyncTimerRef.current);
       wmSyncTimerRef.current = null;
+    }
+    if (bannerSyncTimerRef.current) {
+      clearTimeout(bannerSyncTimerRef.current);
+      bannerSyncTimerRef.current = null;
     }
     if (pendingCloudSyncRef.current) {
       const flush = pendingCloudSyncRef.current;
@@ -307,12 +321,13 @@ export default function AdminModal({
     cleanSettings: SiteSettings,
     saveTs: number
   ): Promise<{ ok: boolean; message?: string }> => {
+    writeLocalCmsSync({ ts: saveTs, synced: false });
     const cloudSettingsPayload = packSettingsForCloud(cleanSettings, saveTs);
     const activePin = localStorage.getItem('report_md_admin_pin') || pinRef.current || '123456';
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 35000);
+      const timeoutId = setTimeout(() => controller.abort(), 45000);
 
       const res = await fetch(CMS_CONFIG.apiUrl, {
         method: 'POST',
@@ -329,6 +344,7 @@ export default function AdminModal({
       if (res.ok) {
         const json = await res.json();
         if (json.ok) {
+          writeLocalCmsSync({ ts: saveTs, synced: true });
           writeLocalWatermark({
             we: cleanSettings.watermarkEnabled !== false,
             wt: cleanSettings.watermarkText ?? '',
@@ -336,6 +352,8 @@ export default function AdminModal({
             ts: saveTs,
             synced: true,
           });
+          // Refresh parent save timestamp after cloud commit finishes so polling stays consistent
+          onUpdateData(cleanMenus, cleanSettings);
           return { ok: true };
         }
         return { ok: false, message: json.message || 'Gagal menyimpan' };
@@ -344,6 +362,81 @@ export default function AdminModal({
       // network or CORS error
     }
     return { ok: false };
+  };
+
+  // Instant Banner Commit: updates React state + localStorage immediately AND syncs to Cloud
+  const commitBannersChange = (
+    nextBanners: BannerSlide[],
+    statusLabel?: string,
+    immediateCloudSync = false
+  ) => {
+    const saveTs = Date.now();
+    bannersRef.current = nextBanners;
+    setBanners(nextBanners);
+
+    const current = settingsStateRef.current;
+    const updatedSettings: SiteSettings = {
+      ...current,
+      searchPlaceholder: stripSearchPlaceholderMeta(current.searchPlaceholder),
+      banners: nextBanners,
+      watermarkEnabled: current.watermarkEnabled !== false,
+      watermarkText: (current.watermarkText ?? '').trim(),
+      watermarkLink: (current.watermarkLink ?? '').trim(),
+    };
+
+    settingsStateRef.current = updatedSettings;
+    setSettings(updatedSettings);
+
+    const cleanMenus = menusRef.current.map((m, idx) => ({
+      ...m,
+      urutan: Number(m.urutan || idx + 1),
+      warna: m.warna && HEX_REGEX.test(m.warna) ? m.warna : '',
+      fotoUrl: m.fotoUrl ? String(m.fotoUrl).trim() : '',
+    }));
+
+    writeLocalCmsSync({ ts: saveTs, synced: false });
+    onUpdateData(cleanMenus, updatedSettings);
+    localStorage.setItem(
+      CMS_CONFIG.cacheKey,
+      JSON.stringify({ time: saveTs, data: cleanMenus, settings: updatedSettings })
+    );
+
+    try {
+      const channel = new BroadcastChannel('report_md_sync_channel');
+      channel.postMessage({ type: 'SYNC_DATA', menus: cleanMenus, settings: updatedSettings });
+      channel.close();
+    } catch {}
+
+    const runCloudSync = () => {
+      pendingCloudSyncRef.current = null;
+      if (statusLabel) {
+        setSaveStatus(statusLabel);
+      } else {
+        setSaveStatus('Menyimpan perubahan banner ke Cloud...');
+      }
+      pushStateToCloud(cleanMenus, updatedSettings, saveTs).then((result) => {
+        if (result.ok) {
+          setSaveStatus('✅ Perubahan banner berhasil disimpan permanen ke Google Sheets!');
+        } else if (result.message) {
+          setSaveStatus(`⚠️ Tersimpan di perangkat ini. Cloud: ${result.message}`);
+        } else {
+          setSaveStatus('✅ Perubahan banner aktif & tersimpan di perangkat ini.');
+        }
+      });
+    };
+
+    if (bannerSyncTimerRef.current) {
+      clearTimeout(bannerSyncTimerRef.current);
+      bannerSyncTimerRef.current = null;
+    }
+
+    if (immediateCloudSync) {
+      runCloudSync();
+    } else {
+      if (statusLabel) setSaveStatus(statusLabel);
+      pendingCloudSyncRef.current = runCloudSync;
+      bannerSyncTimerRef.current = setTimeout(runCloudSync, 900);
+    }
   };
 
   // Instant Watermark Commit: updates React state + localStorage immediately AND syncs to Cloud
@@ -444,15 +537,20 @@ export default function AdminModal({
       clearTimeout(wmSyncTimerRef.current);
       wmSyncTimerRef.current = null;
     }
+    if (bannerSyncTimerRef.current) {
+      clearTimeout(bannerSyncTimerRef.current);
+      bannerSyncTimerRef.current = null;
+    }
     pendingCloudSyncRef.current = null;
 
     setIsLoading(true);
-    setSaveStatus('Menyimpan perubahan...');
+    setSaveStatus('Menyimpan perubahan ke Cloud...');
 
     try {
       const saveTs = Date.now();
+      const latestBanners = bannersRef.current;
       // Normalize menus
-      const cleanMenus = menus.map((m, idx) => ({
+      const cleanMenus = menusRef.current.map((m, idx) => ({
         ...m,
         urutan: Number(m.urutan || idx + 1),
         warna: m.warna && HEX_REGEX.test(m.warna) ? m.warna : '',
@@ -465,13 +563,14 @@ export default function AdminModal({
       const cleanSettings: SiteSettings = {
         ...settings,
         searchPlaceholder: stripSearchPlaceholderMeta(settings.searchPlaceholder),
-        banners,
+        banners: latestBanners,
         watermarkText: trimmedWmText,
         watermarkEnabled: effectiveWatermarkEnabled,
         watermarkLink: (settings.watermarkLink || '').trim(),
       };
 
-      // Write timestamped watermark state immediately
+      // Write timestamped watermark & CMS sync state immediately
+      writeLocalCmsSync({ ts: saveTs, synced: false });
       writeLocalWatermark({
         we: effectiveWatermarkEnabled,
         wt: trimmedWmText,
@@ -527,10 +626,13 @@ export default function AdminModal({
   };
 
   const handleRemoveMenu = (index: number) => {
-    if (confirm('Hapus menu ini?')) {
-      const updated = menus.filter((_, i) => i !== index).map((m, i) => ({ ...m, urutan: i + 1 }));
-      setMenus(updated);
+    if (confirmDeleteMenuIdx !== index) {
+      setConfirmDeleteMenuIdx(index);
+      return;
     }
+    const updated = menus.filter((_, i) => i !== index).map((m, i) => ({ ...m, urutan: i + 1 }));
+    setMenus(updated);
+    setConfirmDeleteMenuIdx(null);
   };
 
   const handleMoveMenu = (index: number, direction: 'up' | 'down') => {
@@ -549,26 +651,43 @@ export default function AdminModal({
 
   // Banner slide functions
   const handleAddBanner = () => {
+    const inheritHideOverlay =
+      banners.length > 0 ? banners.some((b) => Boolean(b.hideOverlay)) : true;
+    const newIdx = banners.length;
     const newSlide: BannerSlide = {
       id: `banner-${Date.now()}`,
       imageUrl: PRESET_IMAGES[0].url,
-      scriptText: 'Bersama',
-      title: 'Judul Banner Baru',
-      subtitle: 'Subjudul atau slogan tim',
-      badgeText: 'Info Tambahan',
+      scriptText: inheritHideOverlay ? '' : 'Bersama',
+      title: inheritHideOverlay ? '' : 'Judul Banner Baru',
+      subtitle: inheritHideOverlay ? '' : 'Subjudul atau slogan tim',
+      badgeText: '',
+      hideOverlay: inheritHideOverlay,
       fitMode: 'contain',
     };
-    setBanners([...banners, newSlide]);
+    const next = [...banners, newSlide];
+    bannersRef.current = next;
+    setBanners(next);
+    setSaveStatus('📷 Slide baru ditambahkan — silakan pilih file foto banner Anda.');
+
+    // Scroll to the new slide and immediately open the file picker for convenience
+    setTimeout(() => {
+      slideListEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }, 60);
+    handleTriggerUpload(newIdx);
   };
 
   const handleRemoveBanner = (index: number) => {
     if (banners.length <= 1) {
-      alert('Minimal harus ada 1 banner slide.');
+      setSaveStatus('⚠️ Minimal harus ada 1 banner slide.');
       return;
     }
-    if (confirm('Hapus banner slide ini?')) {
-      setBanners(banners.filter((_, i) => i !== index));
+    if (confirmDeleteSlideIdx !== index) {
+      setConfirmDeleteSlideIdx(index);
+      return;
     }
+    const next = banners.filter((_, i) => i !== index);
+    setConfirmDeleteSlideIdx(null);
+    commitBannersChange(next, 'Menghapus slide & menyimpan ke Cloud...', true);
   };
 
   const handleMoveBanner = (index: number, direction: 'up' | 'down') => {
@@ -580,7 +699,7 @@ export default function AdminModal({
     const temp = copy[index];
     copy[index] = copy[targetIdx];
     copy[targetIdx] = temp;
-    setBanners(copy);
+    commitBannersChange(copy, 'Mengurutkan slide & menyimpan...', true);
   };
 
   // Image Upload handler for Banners
@@ -639,15 +758,20 @@ export default function AdminModal({
     return finalCanvas;
   };
 
-  const encodeHdBannerDataUrl = (img: HTMLImageElement): { dataUrl: string; width: number; height: number } => {
-    // Keep strictly <= 130,000 base64 chars so it fits cleanly inside Google Sheets 3-chunk (135k) limit
-    const MAX_BASE64_CHARS = 130000;
+  const encodeHdBannerDataUrl = (
+    img: HTMLImageElement
+  ): { dataUrl: string; width: number; height: number } => {
+    // Strictly <= 124,000 base64 chars so Google Sheets 3-cell (135,000 char) limit NEVER truncates the image
+    const MAX_BASE64_CHARS = 124000;
     const dimensionTiers = [
       { maxW: 1600, maxH: 900 },
       { maxW: 1366, maxH: 768 },
-      { maxW: 1152, maxH: 648 },
+      { maxW: 1200, maxH: 675 },
+      { maxW: 1024, maxH: 576 },
+      { maxW: 896, maxH: 504 },
+      { maxW: 768, maxH: 432 },
     ];
-    const qualities = [0.92, 0.86, 0.80, 0.74];
+    const qualities = [0.90, 0.84, 0.78, 0.72, 0.65];
 
     let bestUrl = '';
     let bestW = 0;
@@ -659,17 +783,36 @@ export default function AdminModal({
       bestH = canvas.height;
 
       for (const q of qualities) {
-        // Prefer WebP for superior HD sharpness per KB; fall back to JPEG if unsupported
         const webpCandidate = canvas.toDataURL('image/webp', q);
-        const candidate = webpCandidate.startsWith('data:image/webp')
-          ? webpCandidate
-          : canvas.toDataURL('image/jpeg', q);
+        const hasWebp = webpCandidate.startsWith('data:image/webp');
+        if (hasWebp && webpCandidate.length <= MAX_BASE64_CHARS) {
+          return { dataUrl: webpCandidate, width: bestW, height: bestH };
+        }
 
-        bestUrl = candidate;
-        if (candidate.length <= MAX_BASE64_CHARS) {
-          return { dataUrl: candidate, width: bestW, height: bestH };
+        const jpegCandidate = canvas.toDataURL('image/jpeg', q);
+        const smallerCandidate =
+          hasWebp && webpCandidate.length <= jpegCandidate.length ? webpCandidate : jpegCandidate;
+
+        bestUrl = smallerCandidate;
+        if (smallerCandidate.length <= MAX_BASE64_CHARS) {
+          return { dataUrl: smallerCandidate, width: bestW, height: bestH };
         }
       }
+    }
+
+    // Final mathematical guarantee loop so NO image ever exceeds MAX_BASE64_CHARS
+    let curMaxW = 680;
+    let curMaxH = 382;
+    while (bestUrl.length > MAX_BASE64_CHARS && curMaxW >= 320) {
+      const canvas = renderHighQualityCanvas(img, curMaxW, curMaxH);
+      bestW = canvas.width;
+      bestH = canvas.height;
+      const webp = canvas.toDataURL('image/webp', 0.60);
+      const jpeg = canvas.toDataURL('image/jpeg', 0.60);
+      bestUrl =
+        webp.startsWith('data:image/webp') && webp.length <= jpeg.length ? webp : jpeg;
+      curMaxW = Math.round(curMaxW * 0.85);
+      curMaxH = Math.round(curMaxH * 0.85);
     }
 
     return { dataUrl: bestUrl, width: bestW, height: bestH };
@@ -679,34 +822,55 @@ export default function AdminModal({
     const file = e.target.files?.[0];
     if (!file || uploadTargetIdx === null) return;
 
-    if (file.size > 15 * 1024 * 1024) {
-      setSaveStatus('⚠️ Ukuran file maksimal 15MB. Silakan pilih gambar lain.');
+    if (file.size > 20 * 1024 * 1024) {
+      setSaveStatus('⚠️ Ukuran file maksimal 20MB. Silakan pilih gambar lain.');
       return;
     }
 
     const targetIndex = uploadTargetIdx;
+    setSaveStatus('⏳ Mengoptimalkan foto banner HD agar utuh & tajam...');
     const img = new Image();
     const reader = new FileReader();
     reader.onload = (uploadEvent) => {
       img.src = uploadEvent.target?.result as string;
       img.onload = () => {
         const { dataUrl, width, height } = encodeHdBannerDataUrl(img);
-        if (dataUrl) {
-          setBanners((prev) => {
-            const next = [...prev];
-            if (next[targetIndex]) {
-              next[targetIndex] = {
-                ...next[targetIndex],
-                imageUrl: dataUrl,
-                fitMode: next[targetIndex].fitMode || 'contain',
-              };
-            }
-            return next;
-          });
-          setSaveStatus(
-            `✅ Foto banner berhasil dioptimalkan ke kualitas HD (${width}×${height} px). Klik SIMPAN PERUBAHAN.`
-          );
+        if (!dataUrl) {
+          setSaveStatus('⚠️ Gagal memproses gambar. Silakan coba foto lain.');
+          return;
         }
+
+        // Verify browser decodes the generated dataUrl cleanly before saving
+        const verifyImg = new Image();
+        verifyImg.onload = () => {
+          const baseList = [...bannersRef.current];
+          if (baseList[targetIndex]) {
+            const slideKey = baseList[targetIndex].id || String(targetIndex);
+            setBrokenSlideIds((prev) => {
+              if (!prev[slideKey]) return prev;
+              const copy = { ...prev };
+              delete copy[slideKey];
+              return copy;
+            });
+            baseList[targetIndex] = {
+              ...baseList[targetIndex],
+              imageUrl: dataUrl,
+              fitMode: baseList[targetIndex].fitMode || 'contain',
+            };
+            commitBannersChange(
+              baseList,
+              `⏳ Foto HD (${width}×${height} px) dipasang — menyimpan otomatis ke Google Sheets...`,
+              true
+            );
+          }
+        };
+        verifyImg.onerror = () => {
+          setSaveStatus('⚠️ Format gambar tidak didukung. Silakan gunakan foto JPG atau PNG.');
+        };
+        verifyImg.src = dataUrl;
+      };
+      img.onerror = () => {
+        setSaveStatus('⚠️ File gambar tidak dapat dibaca. Silakan pilih foto JPG atau PNG.');
       };
     };
     reader.readAsDataURL(file);
@@ -737,7 +901,7 @@ export default function AdminModal({
     if (!file) return;
 
     if (file.size > 8 * 1024 * 1024) {
-      alert('Ukuran gambar logo maksimal 8MB.');
+      setSaveStatus('⚠️ Ukuran gambar logo maksimal 8MB.');
       return;
     }
 
@@ -787,7 +951,7 @@ export default function AdminModal({
     if (!file || uploadMenuIdx === null) return;
 
     if (file.size > 8 * 1024 * 1024) {
-      alert('Ukuran foto maksimal 8MB.');
+      setSaveStatus('⚠️ Ukuran foto menu maksimal 8MB.');
       return;
     }
 
@@ -1030,7 +1194,13 @@ export default function AdminModal({
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => setBanners(DEFAULT_BANNERS)}
+                        onClick={() =>
+                          commitBannersChange(
+                            DEFAULT_BANNERS,
+                            'Mereset banner ke bawaan...',
+                            true
+                          )
+                        }
                         className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 px-2.5 py-1.5 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
                       >
                         Reset Bawaan
@@ -1049,13 +1219,44 @@ export default function AdminModal({
                   {/* Banner Slides List */}
                   <div className="space-y-3.5">
                     {banners.map((slide, idx) => {
-                      const displayImg = convertGoogleDriveUrl(slide.imageUrl);
+                      const slideKey = slide.id || String(idx);
+                      const isTruncated =
+                        isTruncatedDataImageUrl(slide.imageUrl) || Boolean(brokenSlideIds[slideKey]);
+                      const isPresetDefault = PRESET_IMAGES.some((p) => p.url === slide.imageUrl);
+                      const displayImg = isTruncated
+                        ? PRESET_IMAGES[0].url
+                        : convertGoogleDriveUrl(slide.imageUrl) || PRESET_IMAGES[0].url;
+                      const previewImgKey = `${slideKey}-${displayImg.length}-${displayImg.slice(-20)}`;
 
                       return (
                         <div
-                          key={slide.id || idx}
-                          className="p-3.5 bg-slate-50/90 rounded-2xl border border-slate-200/90 space-y-3 shadow-2xs"
+                          key={slideKey}
+                          className={`p-3.5 rounded-2xl border space-y-3 shadow-2xs transition-colors ${
+                            isTruncated
+                              ? 'bg-amber-50/70 border-amber-300'
+                              : 'bg-slate-50/90 border-slate-200/90'
+                          }`}
                         >
+                          {/* Warning Callout if a slide was previously truncated at 135k chars */}
+                          {isTruncated && (
+                            <div className="p-2.5 rounded-xl bg-amber-100/90 border border-amber-300 text-amber-950 text-[11px] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <div className="flex items-start gap-2">
+                                <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                                <span>
+                                  <strong>Foto sebelumnya terpotong batas ukuran server</strong> sehingga tampil sebagai foto bawaan. Klik tombol di samping untuk mengunggah ulang — kini otomatis dioptimalkan agar utuh 100% &amp; langsung tersimpan!
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleTriggerUpload(idx)}
+                                className="flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-[#1244a5] hover:bg-[#0e3786] text-white font-bold text-[11px] shrink-0 cursor-pointer shadow-2xs"
+                              >
+                                <Upload className="w-3.5 h-3.5" />
+                                <span>Unggah Ulang Foto</span>
+                              </button>
+                            </div>
+                          )}
+
                           {/* Slide Header: Index + Preview + Controls */}
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex items-center gap-2.5 min-w-0">
@@ -1064,6 +1265,7 @@ export default function AdminModal({
                               </span>
                               <div className="w-28 sm:w-36 h-16 rounded-xl overflow-hidden bg-slate-900 border border-slate-300 shrink-0 shadow-2xs relative">
                                 <img
+                                  key={previewImgKey}
                                   src={displayImg}
                                   alt={`Slide ${idx + 1}`}
                                   className={`w-full h-full ${
@@ -1071,23 +1273,43 @@ export default function AdminModal({
                                   }`}
                                   referrerPolicy="no-referrer"
                                   onError={(e) => {
-                                    (e.target as HTMLImageElement).src = PRESET_IMAGES[0].url;
+                                    const target = e.currentTarget;
+                                    if (slide.imageUrl?.startsWith('data:image/')) {
+                                      setBrokenSlideIds((prev) =>
+                                        prev[slideKey] ? prev : { ...prev, [slideKey]: true }
+                                      );
+                                    }
+                                    if (target.src !== PRESET_IMAGES[0].url) {
+                                      target.src = PRESET_IMAGES[0].url;
+                                    }
                                   }}
                                 />
                               </div>
                               <div className="min-w-0">
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex flex-wrap items-center gap-1.5">
                                   <h5 className="font-bold text-xs sm:text-sm text-slate-800 truncate">
-                                    {slide.title || '(Tanpa Judul Teks)'}
+                                    {slide.title || `Slide Banner ${idx + 1}`}
                                   </h5>
-                                  <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-extrabold shrink-0">
-                                    HD
-                                  </span>
+                                  {isTruncated ? (
+                                    <span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 text-[9px] font-extrabold shrink-0">
+                                      Perlu Unggah Ulang
+                                    </span>
+                                  ) : isPresetDefault ? (
+                                    <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-extrabold shrink-0">
+                                      Foto Bawaan
+                                    </span>
+                                  ) : (
+                                    <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-extrabold shrink-0">
+                                      Foto Kustom HD
+                                    </span>
+                                  )}
                                 </div>
-                                <p className="text-[11px] text-slate-500 truncate">
-                                  {slide.hideOverlay
+                                <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                                  {isPresetDefault
+                                    ? 'Klik "Pilih File" di bawah untuk memakai foto Anda sendiri'
+                                    : slide.hideOverlay
                                     ? '🖼️ Mode Gambar Penuh (Tanpa pita biru)'
-                                    : slide.subtitle || 'Teks standar'}
+                                    : slide.subtitle || 'Teks standar aktif'}
                                 </p>
                               </div>
                             </div>
@@ -1111,15 +1333,34 @@ export default function AdminModal({
                               >
                                 <ArrowDown className="w-3.5 h-3.5" />
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveBanner(idx)}
-                                disabled={banners.length <= 1}
-                                className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer disabled:opacity-30"
-                                title="Hapus Slide"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              {confirmDeleteSlideIdx === idx ? (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveBanner(idx)}
+                                    className="px-2 py-1 text-[10px] font-bold bg-rose-600 text-white rounded-lg hover:bg-rose-700 cursor-pointer"
+                                  >
+                                    Hapus
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteSlideIdx(null)}
+                                    className="px-1.5 py-1 text-[10px] font-semibold bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 cursor-pointer"
+                                  >
+                                    Batal
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveBanner(idx)}
+                                  disabled={banners.length <= 1}
+                                  className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer disabled:opacity-30"
+                                  title="Hapus Slide"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
                             </div>
                           </div>
 
@@ -1131,15 +1372,51 @@ export default function AdminModal({
                             <div className="flex items-center gap-2">
                               <input
                                 type="text"
-                                value={slide.imageUrl}
+                                value={
+                                  slide.imageUrl?.startsWith('data:image/')
+                                    ? isTruncated
+                                      ? '[Foto terpotong — silakan klik Pilih File untuk unggah ulang]'
+                                      : `[Foto Kustom HD Terunggah (${Math.round(slide.imageUrl.length / 1024)} KB)]`
+                                    : slide.imageUrl
+                                }
+                                readOnly={Boolean(slide.imageUrl?.startsWith('data:image/'))}
                                 onChange={(e) => {
+                                  const converted = convertGoogleDriveUrl(e.target.value);
                                   const next = [...banners];
-                                  next[idx].imageUrl = convertGoogleDriveUrl(e.target.value);
-                                  setBanners(next);
+                                  next[idx] = { ...next[idx], imageUrl: converted };
+                                  setBrokenSlideIds((prev) => {
+                                    if (!prev[slideKey]) return prev;
+                                    const copy = { ...prev };
+                                    delete copy[slideKey];
+                                    return copy;
+                                  });
+                                  commitBannersChange(
+                                    next,
+                                    'Link foto diterapkan — menyimpan otomatis...',
+                                    false
+                                  );
                                 }}
-                                placeholder="Pilih file atau tempel link foto / Google Drive (https://...)"
-                                className="flex-1 text-xs text-slate-700 bg-white border border-slate-300 rounded-xl px-3 py-1.5 outline-none focus:border-blue-600 truncate"
+                                placeholder="Pilih file dari HP/PC atau tempel link Google Drive (https://...)"
+                                className={`flex-1 text-xs bg-white border border-slate-300 rounded-xl px-3 py-1.5 outline-none focus:border-blue-600 truncate ${
+                                  slide.imageUrl?.startsWith('data:image/')
+                                    ? 'text-emerald-700 font-semibold bg-emerald-50/40'
+                                    : 'text-slate-700'
+                                }`}
                               />
+                              {slide.imageUrl?.startsWith('data:image/') && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const next = [...banners];
+                                    next[idx] = { ...next[idx], imageUrl: '' };
+                                    setBanners(next);
+                                  }}
+                                  className="px-2.5 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold text-[11px] shrink-0 cursor-pointer"
+                                  title="Ganti dengan Link URL / Google Drive"
+                                >
+                                  Pakai Link
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => handleTriggerUpload(idx)}
@@ -1162,8 +1439,18 @@ export default function AdminModal({
                                   type="button"
                                   onClick={() => {
                                     const next = [...banners];
-                                    next[idx].imageUrl = preset.url;
-                                    setBanners(next);
+                                    next[idx] = { ...next[idx], imageUrl: preset.url };
+                                    setBrokenSlideIds((prev) => {
+                                      if (!prev[slideKey]) return prev;
+                                      const copy = { ...prev };
+                                      delete copy[slideKey];
+                                      return copy;
+                                    });
+                                    commitBannersChange(
+                                      next,
+                                      'Contoh foto dipilih — menyimpan otomatis...',
+                                      true
+                                    );
                                   }}
                                   className="text-[10px] bg-white border border-slate-200 hover:border-blue-400 text-slate-600 px-2 py-0.5 rounded-lg whitespace-nowrap transition-colors cursor-pointer"
                                 >
@@ -1187,7 +1474,11 @@ export default function AdminModal({
                                     ...next[idx],
                                     fitMode: e.target.value as 'contain' | 'cover',
                                   };
-                                  setBanners(next);
+                                  commitBannersChange(
+                                    next,
+                                    'Proporsi banner diperbarui — menyimpan otomatis...',
+                                    true
+                                  );
                                 }}
                                 className="w-full text-xs font-semibold text-slate-800 bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 outline-none focus:border-blue-600 cursor-pointer"
                               >
@@ -1210,7 +1501,11 @@ export default function AdminModal({
                                     ...next[idx],
                                     hideOverlay: e.target.checked,
                                   };
-                                  setBanners(next);
+                                  commitBannersChange(
+                                    next,
+                                    'Tampilan pita teks diperbarui — menyimpan otomatis...',
+                                    true
+                                  );
                                 }}
                                 className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer shrink-0"
                               />
@@ -1232,8 +1527,8 @@ export default function AdminModal({
                                   value={slide.title || ''}
                                   onChange={(e) => {
                                     const next = [...banners];
-                                    next[idx].title = e.target.value;
-                                    setBanners(next);
+                                    next[idx] = { ...next[idx], title: e.target.value };
+                                    commitBannersChange(next, undefined, false);
                                   }}
                                   placeholder="Mendukung Kinerja Terbaik"
                                   className="w-full text-xs font-semibold text-slate-800 bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 outline-none focus:border-blue-600"
@@ -1249,8 +1544,8 @@ export default function AdminModal({
                                   value={slide.subtitle || ''}
                                   onChange={(e) => {
                                     const next = [...banners];
-                                    next[idx].subtitle = e.target.value;
-                                    setBanners(next);
+                                    next[idx] = { ...next[idx], subtitle: e.target.value };
+                                    commitBannersChange(next, undefined, false);
                                   }}
                                   placeholder="Tim MD Purwokerto"
                                   className="w-full text-xs text-slate-700 bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 outline-none focus:border-blue-600"
@@ -1266,8 +1561,8 @@ export default function AdminModal({
                                   value={slide.scriptText || ''}
                                   onChange={(e) => {
                                     const next = [...banners];
-                                    next[idx].scriptText = e.target.value;
-                                    setBanners(next);
+                                    next[idx] = { ...next[idx], scriptText: e.target.value };
+                                    commitBannersChange(next, undefined, false);
                                   }}
                                   placeholder="Bersama / Semangat"
                                   className="w-full text-xs text-slate-700 bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 outline-none focus:border-blue-600"
@@ -1283,8 +1578,8 @@ export default function AdminModal({
                                   value={slide.badgeText || ''}
                                   onChange={(e) => {
                                     const next = [...banners];
-                                    next[idx].badgeText = e.target.value;
-                                    setBanners(next);
+                                    next[idx] = { ...next[idx], badgeText: e.target.value };
+                                    commitBannersChange(next, undefined, false);
                                   }}
                                   placeholder="Jangkauan Lebih Luas..."
                                   className="w-full text-xs text-slate-700 bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 outline-none focus:border-blue-600"
@@ -1295,6 +1590,7 @@ export default function AdminModal({
                         </div>
                       );
                     })}
+                    <div ref={slideListEndRef} />
                   </div>
                 </div>
               )}
@@ -1379,14 +1675,33 @@ export default function AdminModal({
                               <option value="NONAKTIF">NONAKTIF</option>
                             </select>
 
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveMenu(idx)}
-                              className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                              title="Hapus Menu"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            {confirmDeleteMenuIdx === idx ? (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveMenu(idx)}
+                                  className="px-2 py-1 text-[10px] font-bold bg-rose-600 text-white rounded-lg hover:bg-rose-700 cursor-pointer"
+                                >
+                                  Hapus
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteMenuIdx(null)}
+                                  className="px-1.5 py-1 text-[10px] font-semibold bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 cursor-pointer"
+                                >
+                                  Batal
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveMenu(idx)}
+                                className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                title="Hapus Menu"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
                           </div>
                         </div>
 
