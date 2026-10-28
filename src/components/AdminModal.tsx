@@ -32,6 +32,7 @@ import {
   isTruncatedDataImageUrl,
   writeLocalCmsSync,
 } from '../utils/settingsSync';
+import { saveCmsCache } from '../utils/cmsStorage';
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -97,6 +98,9 @@ export default function AdminModal({
   const wmSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bannerSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingCloudSyncRef = useRef<(() => void) | null>(null);
+  const cloudSaveChainRef = useRef<Promise<{ ok: boolean; message?: string }>>(
+    Promise.resolve({ ok: true })
+  );
 
   React.useEffect(() => {
     menusRef.current = menus;
@@ -315,56 +319,67 @@ export default function AdminModal({
     setIsLoading(false);
   };
 
-  // Shared helper to push state to Google Apps Script in background or foreground
-  const pushStateToCloud = async (
+  // Shared helper to push state to Google Apps Script sequentially (prevents concurrent sheet rewrite collisions)
+  const pushStateToCloud = (
     cleanMenus: MenuItem[],
     cleanSettings: SiteSettings,
     saveTs: number
   ): Promise<{ ok: boolean; message?: string }> => {
-    writeLocalCmsSync({ ts: saveTs, synced: false });
-    const cloudSettingsPayload = packSettingsForCloud(cleanSettings, saveTs);
-    const activePin = localStorage.getItem('report_md_admin_pin') || pinRef.current || '123456';
-
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 45000);
-
-      const res = await fetch(CMS_CONFIG.apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          action: 'saveState',
-          pin: activePin,
-          state: { menus: cleanMenus, settings: cloudSettingsPayload },
-        }),
-        signal: controller.signal,
+    const runTask = async (): Promise<{ ok: boolean; message?: string }> => {
+      writeLocalCmsSync({ ts: saveTs, synced: false });
+      const cloudSettingsPayload = packSettingsForCloud(cleanSettings, saveTs);
+      const activePin = localStorage.getItem('report_md_admin_pin') || pinRef.current || '123456';
+      const bodyStr = JSON.stringify({
+        action: 'saveState',
+        pin: activePin,
+        state: { menus: cleanMenus, settings: cloudSettingsPayload },
       });
-      clearTimeout(timeoutId);
 
-      if (res.ok) {
-        const json = await res.json();
-        if (json.ok) {
-          writeLocalCmsSync({ ts: saveTs, synced: true });
-          writeLocalWatermark({
-            we: cleanSettings.watermarkEnabled !== false,
-            wt: cleanSettings.watermarkText ?? '',
-            wl: cleanSettings.watermarkLink ?? '',
-            ts: saveTs,
-            synced: true,
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 50000);
+
+          const res = await fetch(CMS_CONFIG.apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: bodyStr,
+            signal: controller.signal,
           });
-          // Refresh parent save timestamp after cloud commit finishes so polling stays consistent
-          onUpdateData(cleanMenus, cleanSettings);
-          return { ok: true };
+          clearTimeout(timeoutId);
+
+          if (res.ok) {
+            const json = await res.json();
+            if (json.ok) {
+              writeLocalCmsSync({ ts: saveTs, synced: true });
+              writeLocalWatermark({
+                we: cleanSettings.watermarkEnabled !== false,
+                wt: cleanSettings.watermarkText ?? '',
+                wl: cleanSettings.watermarkLink ?? '',
+                ts: saveTs,
+                synced: true,
+              });
+              onUpdateData(cleanMenus, cleanSettings);
+              return { ok: true };
+            }
+            return { ok: false, message: json.message || 'Gagal menyimpan' };
+          }
+        } catch {
+          // Retry once after 2.5s on cellular hiccup or Google Apps Script busy lock
+          if (attempt === 1) {
+            await new Promise((r) => setTimeout(r, 2500));
+          }
         }
-        return { ok: false, message: json.message || 'Gagal menyimpan' };
       }
-    } catch {
-      // network or CORS error
-    }
-    return { ok: false };
+      return { ok: false };
+    };
+
+    const queued = cloudSaveChainRef.current.catch(() => ({ ok: false })).then(() => runTask());
+    cloudSaveChainRef.current = queued;
+    return queued;
   };
 
-  // Instant Banner Commit: updates React state + localStorage immediately AND syncs to Cloud
+  // Instant Banner Commit: updates React state + IndexedDB/localStorage immediately AND syncs to Cloud
   const commitBannersChange = (
     nextBanners: BannerSlide[],
     statusLabel?: string,
@@ -396,10 +411,7 @@ export default function AdminModal({
 
     writeLocalCmsSync({ ts: saveTs, synced: false });
     onUpdateData(cleanMenus, updatedSettings);
-    localStorage.setItem(
-      CMS_CONFIG.cacheKey,
-      JSON.stringify({ time: saveTs, data: cleanMenus, settings: updatedSettings })
-    );
+    saveCmsCache({ time: saveTs, data: cleanMenus, settings: updatedSettings });
 
     try {
       const channel = new BroadcastChannel('report_md_sync_channel');
@@ -490,10 +502,7 @@ export default function AdminModal({
     };
 
     onUpdateData(cleanMenus, parentSettings);
-    localStorage.setItem(
-      CMS_CONFIG.cacheKey,
-      JSON.stringify({ time: saveTs, data: cleanMenus, settings: parentSettings })
-    );
+    saveCmsCache({ time: saveTs, data: cleanMenus, settings: parentSettings });
 
     try {
       const channel = new BroadcastChannel('report_md_sync_channel');
@@ -579,14 +588,11 @@ export default function AdminModal({
         synced: false,
       });
 
-      // Update parent component state and local cache immediately
+      // Update parent component state and high-capacity local cache immediately
       settingsStateRef.current = cleanSettings;
       setSettings(cleanSettings);
       onUpdateData(cleanMenus, cleanSettings);
-      localStorage.setItem(
-        CMS_CONFIG.cacheKey,
-        JSON.stringify({ time: saveTs, data: cleanMenus, settings: cleanSettings })
-      );
+      saveCmsCache({ time: saveTs, data: cleanMenus, settings: cleanSettings });
 
       // Instant cross-tab broadcast for same device
       try {

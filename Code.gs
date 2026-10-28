@@ -76,7 +76,9 @@ function json_(obj, callback) {
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'public') {
     const callback = e.parameter.callback || e.parameter.prefix || '';
+    const lock = LockService.getScriptLock();
     try {
+      lock.tryLock(15000);
       const ss = getSS_();
       const menus = readMenus_(ss).filter(m => String(m.status).toUpperCase() === 'AKTIF');
       const settings = readSettings_(ss);
@@ -88,6 +90,8 @@ function doGet(e) {
       }, callback);
     } catch (err) {
       return json_({ ok: false, message: err.message }, callback);
+    } finally {
+      try { lock.releaseLock(); } catch (e2) {}
     }
   }
 
@@ -128,117 +132,139 @@ function getState(pin) {
 
 function saveState(pin, payload) {
   auth_(pin);
-  const ss = getSS_();
   if (!payload) return { ok: true };
 
-  // 1. Simpan Data Menus (Hanya jika payload.menus disediakan dan berupa array)
-  if (Array.isArray(payload.menus) && payload.menus.length > 0) {
-    let menusSheet = ss.getSheetByName('Menus');
-    if (!menusSheet) menusSheet = ss.insertSheet('Menus');
-    menusSheet.clear();
-    ensureCols_(menusSheet, 7);
-    menusSheet.getRange(1, 1, 1, 7).setValues([['Nama', 'Link', 'Status', 'Urutan', 'Deskripsi', 'Warna', 'FotoUrl']]);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
 
-    const menuRows = payload.menus.map((x, i) => [
-      String(x.nama || '').trim(),
-      String(x.link || '').trim(),
-      String(x.status || 'AKTIF').toUpperCase(),
-      Number(x.urutan || i + 1),
-      String(x.deskripsi || '').trim(),
-      cleanColor_(x.warna),
-      truncateCell_(x.fotoUrl || '')
-    ]);
-    if (menuRows.length > 0) {
-      menusSheet.getRange(2, 1, menuRows.length, 7).setValues(menuRows);
+  try {
+    const ss = getSS_();
+
+    // 1. Simpan Data Menus secara atomik (tanpa mengosongkan tabel terlebih dahulu)
+    if (Array.isArray(payload.menus) && payload.menus.length > 0) {
+      let menusSheet = ss.getSheetByName('Menus');
+      if (!menusSheet) menusSheet = ss.insertSheet('Menus');
+      ensureCols_(menusSheet, 7);
+      const prevLastRow = menusSheet.getLastRow();
+      menusSheet.getRange(1, 1, 1, 7).setValues([['Nama', 'Link', 'Status', 'Urutan', 'Deskripsi', 'Warna', 'FotoUrl']]);
+
+      const menuRows = payload.menus.map((x, i) => [
+        String(x.nama || '').trim(),
+        String(x.link || '').trim(),
+        String(x.status || 'AKTIF').toUpperCase(),
+        Number(x.urutan || i + 1),
+        String(x.deskripsi || '').trim(),
+        cleanColor_(x.warna),
+        truncateCell_(x.fotoUrl || '')
+      ]);
+      if (menuRows.length > 0) {
+        menusSheet.getRange(2, 1, menuRows.length, 7).setValues(menuRows);
+      }
+      const newLastRow = menuRows.length + 1;
+      if (prevLastRow > newLastRow) {
+        menusSheet.getRange(newLastRow + 1, 1, prevLastRow - newLastRow, menusSheet.getMaxColumns()).clearContent();
+      }
+      menusSheet.setFrozenRows(1);
     }
-    menusSheet.setFrozenRows(1);
-  }
 
-  // 2. Simpan Data Settings, Banner & Logo (Hanya jika payload.settings disediakan)
-  if (payload.settings && typeof payload.settings === 'object') {
-    let settingsSheet = ss.getSheetByName('Settings');
-    if (!settingsSheet) settingsSheet = ss.insertSheet('Settings');
-    settingsSheet.clear();
-    settingsSheet.getRange(1, 1, 1, 2).setValues([['Key', 'Value']]);
+    // 2. Simpan Data Settings, Banner & Logo secara atomik
+    if (payload.settings && typeof payload.settings === 'object') {
+      let settingsSheet = ss.getSheetByName('Settings');
+      if (!settingsSheet) settingsSheet = ss.insertSheet('Settings');
+      const prevSettingsLastRow = settingsSheet.getLastRow();
+      settingsSheet.getRange(1, 1, 1, 2).setValues([['Key', 'Value']]);
 
-    const st = payload.settings;
-    const logoRaw = String(st.logoUrl || '').trim();
-    const logoPart1 = logoRaw.substring(0, 45000);
-    const logoPart2 = logoRaw.substring(45000, 90000);
-    const logoPart3 = logoRaw.substring(90000, 135000);
+      const st = payload.settings;
+      const logoRaw = String(st.logoUrl || '').trim();
+      const logoPart1 = logoRaw.substring(0, 45000);
+      const logoPart2 = logoRaw.substring(45000, 90000);
+      const logoPart3 = logoRaw.substring(90000, 135000);
 
-    const settingRows = [
-      ['title', truncateCell_(st.title || 'REPORT MD PURWOKERTO')],
-      ['subtitle', truncateCell_(st.subtitle || 'KAO Peduli Inovasi')],
-      ['searchPlaceholder', truncateCell_(st.searchPlaceholder || 'Cari menu atau nama MD...')],
-      ['warna1', cleanColor_(st.warna1)],
-      ['warna2', cleanColor_(st.warna2)],
-      ['bannerAutoSlideInterval', String(st.bannerAutoSlideInterval || 4)],
-      ['banners', truncateCell_(JSON.stringify(st.banners || []))],
-      ['logoUrl', logoPart1],
-      ['logoUrl_part2', logoPart2],
-      ['logoUrl_part3', logoPart3],
-      ['logoText', truncateCell_(st.logoText !== undefined ? String(st.logoText) : 'BTB')],
-      ['watermarkText', truncateCell_(st.watermarkText !== undefined ? String(st.watermarkText) : 'Powered by Intisari')],
-      ['watermarkEnabled', st.watermarkEnabled === false || String(st.watermarkEnabled) === 'false' ? 'false' : 'true'],
-      ['watermarkLink', truncateCell_(st.watermarkLink || '')],
-      ['updatedAt', new Date().toISOString()]
-    ];
-    settingsSheet.getRange(2, 1, settingRows.length, 2).setValues(settingRows);
-    settingsSheet.setFrozenRows(1);
+      const settingRows = [
+        ['title', truncateCell_(st.title || 'REPORT MD PURWOKERTO')],
+        ['subtitle', truncateCell_(st.subtitle || 'KAO Peduli Inovasi')],
+        ['searchPlaceholder', truncateCell_(st.searchPlaceholder || 'Cari menu atau nama MD...')],
+        ['warna1', cleanColor_(st.warna1)],
+        ['warna2', cleanColor_(st.warna2)],
+        ['bannerAutoSlideInterval', String(st.bannerAutoSlideInterval || 4)],
+        ['banners', truncateCell_(JSON.stringify(st.banners || []))],
+        ['logoUrl', logoPart1],
+        ['logoUrl_part2', logoPart2],
+        ['logoUrl_part3', logoPart3],
+        ['logoText', truncateCell_(st.logoText !== undefined ? String(st.logoText) : 'BTB')],
+        ['watermarkText', truncateCell_(st.watermarkText !== undefined ? String(st.watermarkText) : 'Powered by Intisari')],
+        ['watermarkEnabled', st.watermarkEnabled === false || String(st.watermarkEnabled) === 'false' ? 'false' : 'true'],
+        ['watermarkLink', truncateCell_(st.watermarkLink || '')],
+        ['updatedAt', new Date().toISOString()]
+      ];
+      settingsSheet.getRange(2, 1, settingRows.length, 2).setValues(settingRows);
+      const newSettingsLastRow = settingRows.length + 1;
+      if (prevSettingsLastRow > newSettingsLastRow) {
+        settingsSheet.getRange(newSettingsLastRow + 1, 1, prevSettingsLastRow - newSettingsLastRow, settingsSheet.getMaxColumns()).clearContent();
+      }
+      settingsSheet.setFrozenRows(1);
 
-    // 3. Simpan Banners ke Sheet Terpisah (Mencegah Limit 50.000 Karakter Google Sheets, Mendukung Gambar HD)
-    if (Array.isArray(st.banners)) {
-      let bannersSheet = ss.getSheetByName('Banners');
-      const bannerHeaders = [[
-        'id',
-        'imageUrl',
-        'title',
-        'subtitle',
-        'scriptText',
-        'badgeText',
-        'imageUrl_part2',
-        'imageUrl_part3',
-        'hideOverlay',
-        'fitMode',
-        'imageUrl_part4'
-      ]];
-      if (st.banners.length > 0) {
-        if (!bannersSheet) bannersSheet = ss.insertSheet('Banners');
-        bannersSheet.clear();
-        bannersSheet.getRange(1, 1, 1, 11).setValues(bannerHeaders);
+      // 3. Simpan Banners ke Sheet Terpisah secara atomik
+      if (Array.isArray(st.banners)) {
+        let bannersSheet = ss.getSheetByName('Banners');
+        const bannerHeaders = [[
+          'id',
+          'imageUrl',
+          'title',
+          'subtitle',
+          'scriptText',
+          'badgeText',
+          'imageUrl_part2',
+          'imageUrl_part3',
+          'hideOverlay',
+          'fitMode',
+          'imageUrl_part4'
+        ]];
+        if (st.banners.length > 0) {
+          if (!bannersSheet) bannersSheet = ss.insertSheet('Banners');
+          ensureCols_(bannersSheet, 11);
+          const prevBannerLastRow = bannersSheet.getLastRow();
+          bannersSheet.getRange(1, 1, 1, 11).setValues(bannerHeaders);
 
-        const bannerRows = st.banners.map((b, idx) => {
-          const imgRaw = String(b.imageUrl || '').trim();
-          const p1 = imgRaw.substring(0, 45000);
-          const p2 = imgRaw.substring(45000, 90000);
-          const p3 = imgRaw.substring(90000, 135000);
-          const p4 = imgRaw.substring(135000, 180000);
-          return [
-            String(b.id || ('banner-' + (idx + 1))),
-            p1,
-            truncateCell_(b.title || ''),
-            truncateCell_(b.subtitle || ''),
-            truncateCell_(b.scriptText || ''),
-            truncateCell_(b.badgeText || ''),
-            p2,
-            p3,
-            b.hideOverlay ? 'true' : 'false',
-            b.fitMode === 'cover' ? 'cover' : 'contain',
-            p4
-          ];
-        });
-        bannersSheet.getRange(2, 1, bannerRows.length, 11).setValues(bannerRows);
-        bannersSheet.setFrozenRows(1);
-      } else if (bannersSheet) {
-        bannersSheet.clear();
-        bannersSheet.getRange(1, 1, 1, 11).setValues(bannerHeaders);
-        bannersSheet.setFrozenRows(1);
+          const bannerRows = st.banners.map((b, idx) => {
+            const imgRaw = String(b.imageUrl || '').trim();
+            const p1 = imgRaw.substring(0, 45000);
+            const p2 = imgRaw.substring(45000, 90000);
+            const p3 = imgRaw.substring(90000, 135000);
+            const p4 = imgRaw.substring(135000, 180000);
+            return [
+              String(b.id || ('banner-' + (idx + 1))),
+              p1,
+              truncateCell_(b.title || ''),
+              truncateCell_(b.subtitle || ''),
+              truncateCell_(b.scriptText || ''),
+              truncateCell_(b.badgeText || ''),
+              p2,
+              p3,
+              b.hideOverlay ? 'true' : 'false',
+              b.fitMode === 'cover' ? 'cover' : 'contain',
+              p4
+            ];
+          });
+          bannersSheet.getRange(2, 1, bannerRows.length, 11).setValues(bannerRows);
+          const newBannerLastRow = bannerRows.length + 1;
+          if (prevBannerLastRow > newBannerLastRow) {
+            bannersSheet.getRange(newBannerLastRow + 1, 1, prevBannerLastRow - newBannerLastRow, bannersSheet.getMaxColumns()).clearContent();
+          }
+          bannersSheet.setFrozenRows(1);
+        } else if (bannersSheet) {
+          bannersSheet.clear();
+          bannersSheet.getRange(1, 1, 1, 11).setValues(bannerHeaders);
+          bannersSheet.setFrozenRows(1);
+        }
       }
     }
-  }
 
-  return { ok: true, message: 'Data berhasil disinkronkan ke seluruh pengguna.', savedAt: new Date().toISOString() };
+    SpreadsheetApp.flush();
+    return { ok: true, message: 'Data berhasil disinkronkan ke seluruh pengguna.', savedAt: new Date().toISOString() };
+  } finally {
+    try { lock.releaseLock(); } catch (e3) {}
+  }
 }
 
 function changePin(oldPin, newPin) {

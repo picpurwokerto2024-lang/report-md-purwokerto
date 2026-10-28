@@ -16,16 +16,16 @@ export default function BtbLogo({
   // If custom logo URL is provided and has not errored
   if (logoUrl && !imageError) {
     return (
-      <div className={`flex items-center gap-2 select-none shrink-0 ${className}`}>
+      <div className={`flex items-center gap-1.5 sm:gap-2 select-none shrink-0 ${className}`}>
         <img
           src={logoUrl}
           alt={logoText || 'Logo Perusahaan'}
-          className="h-full w-auto max-w-[130px] object-contain drop-shadow-sm"
+          className="h-full w-auto max-w-[96px] sm:max-w-[130px] object-contain drop-shadow-sm"
           referrerPolicy="no-referrer"
           onError={() => setImageError(true)}
         />
         {logoText && logoText !== 'BTB' && (
-          <span className="font-extrabold text-xl md:text-2xl tracking-tight text-[#EAB308] drop-shadow-[0_1.5px_0_#1E3A8A] font-sans">
+          <span className="font-extrabold text-lg sm:text-xl md:text-2xl tracking-tight text-[#EAB308] drop-shadow-[0_1.5px_0_#1E3A8A] font-sans">
             {logoText}
           </span>
         )}
@@ -35,7 +35,7 @@ export default function BtbLogo({
 
   // Default Mascot Bee + BTB Branding
   return (
-    <div className={`flex items-center gap-2 select-none shrink-0 ${className}`}>
+    <div className={`flex items-center gap-1.5 sm:gap-2 select-none shrink-0 ${className}`}>
       {/* Bee Mascot SVG */}
       <svg
         viewBox="0 0 100 90"
@@ -135,7 +135,7 @@ export default function BtbLogo({
       </svg>
 
       {/* BTB Typography */}
-      <span className="font-extrabold text-2xl md:text-3xl tracking-tight text-[#EAB308] drop-shadow-[0_1.5px_0_#1E3A8A] font-sans">
+      <span className="font-extrabold text-xl sm:text-2xl md:text-3xl tracking-tight text-[#EAB308] drop-shadow-[0_1.5px_0_#1E3A8A] font-sans">
         {logoText || 'BTB'}
       </span>
     </div>

@@ -17,11 +17,18 @@ import {
   unpackSettingsFromCloud,
   readLocalCmsSync,
 } from './utils/settingsSync';
+import {
+  saveCmsCache,
+  readSyncCmsCache,
+  readAsyncCmsCache,
+  hasUsableLocalCache,
+} from './utils/cmsStorage';
 import { Search, SlidersHorizontal, RefreshCw, Clock, Smartphone, Download, Sparkles, X } from 'lucide-react';
 
 export default function App() {
   const [menus, setMenus] = useState<MenuItem[]>(INITIAL_MENUS);
   const [settings, setSettings] = useState<SiteSettings>(() => getInitialSettingsFromStorage());
+  const menusRef = useRef<MenuItem[]>(menus);
   const settingsRef = useRef<SiteSettings>(settings);
   const lastAdminSaveAtRef = useRef<number>(0);
   const [cmsStatus, setCmsStatus] = useState<{ text: string; state: 'ok' | 'loading' | 'offline' }>({
@@ -58,16 +65,85 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    menusRef.current = menus;
+  }, [menus]);
+
+  useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
 
-  // Concurrency guard and failure counters for network resilience on cellular data
+  // Concurrency guard, cooldown, and auto-recovery timers for resilient cellular sync
   const isFetchingRef = useRef(false);
   const failCountRef = useRef(0);
+  const lastFetchCompletedAtRef = useRef<number>(0);
+  const autoRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load CMS Data from Google Apps Script with dual-transport (Fetch + JSONP) & smart cache retention
+  // Dual-transport single attempt helper (30s timeout for ~800KB+ multi-banner HD payloads on cellular)
+  const fetchPublicCmsOnce = async (timeoutMs = 30000): Promise<any> => {
+    let json: any = null;
+
+    // Strategy A: Modern CORS fetch with redirect follow
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const res = await fetch(`${CMS_CONFIG.apiUrl}?action=public&t=${Date.now()}`, {
+        cache: 'no-store',
+        mode: 'cors',
+        redirect: 'follow',
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        json = await res.json();
+      }
+    } catch {
+      // Proceed to JSONP fallback on ISP CORS / proxy drop
+    }
+
+    // Strategy B: JSONP fallback
+    if (!json || !json.ok) {
+      try {
+        json = await new Promise((resolve, reject) => {
+          const callbackName = `_gas_cb_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+          const script = document.createElement('script');
+          let timer: ReturnType<typeof setTimeout> | null = null;
+
+          (window as any)[callbackName] = (data: any) => {
+            cleanup();
+            if (data && data.ok) resolve(data);
+            else reject(new Error(data?.message || 'JSONP error'));
+          };
+
+          const cleanup = () => {
+            if (timer) clearTimeout(timer);
+            delete (window as any)[callbackName];
+            if (script.parentNode) script.parentNode.removeChild(script);
+          };
+
+          timer = setTimeout(() => {
+            cleanup();
+            reject(new Error('Timeout koneksi seluler'));
+          }, timeoutMs);
+
+          script.onerror = () => {
+            cleanup();
+            reject(new Error('Gagal memuat skrip JSONP'));
+          };
+
+          script.src = `${CMS_CONFIG.apiUrl}?action=public&callback=${callbackName}&t=${Date.now()}`;
+          document.head.appendChild(script);
+        });
+      } catch {
+        // Both strategies attempted
+      }
+    }
+
+    return json;
+  };
+
+  // Load CMS Data from Google Apps Script with IndexedDB + localStorage cache & auto-healing
   const loadCMS = async (force = false, manual = false) => {
-    // Skip automatic background polling right after an Admin edit or while a banner upload is still writing to Google Sheets
+    // Skip automatic background polling right after an Admin edit or while a banner upload is writing to Google Sheets
     const localSync = readLocalCmsSync();
     const hasPendingRecentSave =
       Boolean(localSync && !localSync.synced && Date.now() - localSync.ts < 60000);
@@ -75,33 +151,60 @@ export default function App() {
       return;
     }
 
+    // Throttle duplicate automatic triggers (e.g. simultaneous focus + visibilitychange on phone unlock)
+    if (force && !manual && Date.now() - lastFetchCompletedAtRef.current < 12000) {
+      return;
+    }
+
     // Prevent overlapping requests that choke mobile/cellular connections
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
+
+    if (autoRetryTimerRef.current) {
+      clearTimeout(autoRetryTimerRef.current);
+      autoRetryTimerRef.current = null;
+    }
+
     const fetchStartedAt = Date.now();
     if (!force || manual) setIsRefreshing(true);
 
     try {
-      // 1. Immediately read cache first if available so UI is instantly responsive
+      // 1. Immediately hydrate from local cache on initial boot (0ms sync + high-capacity IndexedDB)
       if (!force) {
-        const cached = localStorage.getItem(CMS_CONFIG.cacheKey);
-        if (cached) {
-          try {
-            const parsed = JSON.parse(cached);
-            if (parsed.data && Array.isArray(parsed.data) && parsed.data.length > 0) {
-              setMenus(parsed.data);
-              if (parsed.settings) {
-                const unpackedCached = unpackSettingsFromCloud(
-                  parsed.settings,
-                  settingsRef.current
-                );
-                settingsRef.current = unpackedCached;
-                setSettings(unpackedCached);
-              }
-              if (parsed.time) setLastSyncDate(new Date(parsed.time));
-              setCmsStatus({ text: 'CMS Aktif', state: 'ok' });
-            }
-          } catch {}
+        const syncCached = readSyncCmsCache();
+        if (syncCached) {
+          setMenus(syncCached.data);
+          menusRef.current = syncCached.data;
+          if (syncCached.settings) {
+            const unpackedCached = unpackSettingsFromCloud(
+              syncCached.settings,
+              settingsRef.current
+            );
+            settingsRef.current = unpackedCached;
+            setSettings(unpackedCached);
+          }
+          if (syncCached.time) setLastSyncDate(new Date(syncCached.time));
+          setCmsStatus({ text: 'CMS Aktif', state: 'ok' });
+        }
+
+        // Also restore full HD base64 banners from IndexedDB if localStorage used compact fallback
+        const asyncCached = await readAsyncCmsCache();
+        if (
+          asyncCached &&
+          (!syncCached || syncCached.compact || asyncCached.time >= syncCached.time)
+        ) {
+          setMenus(asyncCached.data);
+          menusRef.current = asyncCached.data;
+          if (asyncCached.settings) {
+            const unpackedIdb = unpackSettingsFromCloud(
+              asyncCached.settings,
+              settingsRef.current
+            );
+            settingsRef.current = unpackedIdb;
+            setSettings(unpackedIdb);
+          }
+          if (asyncCached.time) setLastSyncDate(new Date(asyncCached.time));
+          setCmsStatus({ text: 'CMS Aktif', state: 'ok' });
         }
       }
 
@@ -111,68 +214,19 @@ export default function App() {
         return;
       }
 
-      // 3. Resilient Fetch: Primary fetch with timeout, followed by JSONP fallback for strict mobile ISPs
-      let json: any = null;
+      // 3. Fetch from Google Apps Script (with automatic mid-write retry if caught during sheet rewrite)
+      let json = await fetchPublicCmsOnce(30000);
 
-      // Strategy A: Modern fetch with follow redirect & 16s AbortController
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 16000);
-        const res = await fetch(`${CMS_CONFIG.apiUrl}?action=public&t=${Date.now()}`, {
-          cache: 'no-store',
-          mode: 'cors',
-          redirect: 'follow',
-          signal: controller.signal,
-        });
-        clearTimeout(timer);
-        if (res.ok) {
-          json = await res.json();
-        }
-      } catch {
-        // Fetch failed (network drop or cellular ISP CORS restriction); proceed to fallback
-      }
-
-      // Strategy B: JSONP Fallback (works across all cellular data providers & proxy filters)
-      if (!json || !json.ok) {
-        try {
-          json = await new Promise((resolve, reject) => {
-            const callbackName = `_gas_cb_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-            const script = document.createElement('script');
-            let timer: any = null;
-
-            (window as any)[callbackName] = (data: any) => {
-              cleanup();
-              if (data && data.ok) resolve(data);
-              else reject(new Error(data?.message || 'JSONP error'));
-            };
-
-            const cleanup = () => {
-              if (timer) clearTimeout(timer);
-              delete (window as any)[callbackName];
-              if (script.parentNode) script.parentNode.removeChild(script);
-            };
-
-            timer = setTimeout(() => {
-              cleanup();
-              reject(new Error('Timeout koneksi seluler'));
-            }, 18000);
-
-            script.onerror = () => {
-              cleanup();
-              reject(new Error('Gagal memuat skrip JSONP'));
-            };
-
-            script.src = `${CMS_CONFIG.apiUrl}?action=public&callback=${callbackName}&t=${Date.now()}`;
-            document.head.appendChild(script);
-          });
-        } catch {
-          // Both strategies attempted
-        }
+      if (json && json.ok && Array.isArray(json.menus) && json.menus.length === 0) {
+        // Google Sheets was caught mid-rewrite during an Admin saveState; wait 2.2s and retry once
+        await new Promise((r) => setTimeout(r, 2200));
+        json = await fetchPublicCmsOnce(30000);
       }
 
       // 4. Process successful response
-      if (json && json.ok && Array.isArray(json.menus) && json.menus.length > 0) {
-        failCountRef.current = 0; // Reset consecutive failures
+      if (json && json.ok && Array.isArray(json.menus)) {
+        failCountRef.current = 0;
+        lastFetchCompletedAtRef.current = Date.now();
 
         // Ignore stale network response if Admin updated data while this fetch was in-flight
         if (lastAdminSaveAtRef.current > fetchStartedAt || isAdminOpenRef.current) {
@@ -180,17 +234,23 @@ export default function App() {
           return;
         }
 
-        const normalized = json.menus.map((m: MenuItem, idx: number) => ({
-          nama: m.nama || 'Laporan MD',
-          link: m.link || '#',
-          status: m.status || 'AKTIF',
-          urutan: Number(m.urutan || idx + 1),
-          deskripsi: m.deskripsi || '',
-          warna: m.warna || '',
-          fotoUrl: m.fotoUrl ? String(m.fotoUrl).trim() : '',
-        }));
+        // If sheet is still mid-write (0 menus) while we already have menus, keep current menus safely
+        const normalized =
+          json.menus.length > 0
+            ? json.menus.map((m: MenuItem, idx: number) => ({
+                nama: m.nama || 'Laporan MD',
+                link: m.link || '#',
+                status: m.status || 'AKTIF',
+                urutan: Number(m.urutan || idx + 1),
+                deskripsi: m.deskripsi || '',
+                warna: m.warna || '',
+                fotoUrl: m.fotoUrl ? String(m.fotoUrl).trim() : '',
+              }))
+            : menusRef.current;
 
         setMenus(normalized);
+        menusRef.current = normalized;
+
         const mergedSettings = json.settings
           ? unpackSettingsFromCloud(json.settings, settingsRef.current)
           : settingsRef.current;
@@ -201,27 +261,40 @@ export default function App() {
         const now = new Date();
         setLastSyncDate(now);
 
-        localStorage.setItem(
-          CMS_CONFIG.cacheKey,
-          JSON.stringify({
-            time: now.getTime(),
-            data: normalized,
-            settings: mergedSettings,
-          })
-        );
+        // Quota-safe dual persistence (IndexedDB + guarded localStorage — never throws QuotaExceededError)
+        saveCmsCache({
+          time: now.getTime(),
+          data: normalized,
+          settings: mergedSettings,
+        });
+
         setCmsStatus({ text: 'CMS Aktif', state: 'ok' });
       } else {
-        throw new Error(json?.message || 'Format respon tidak sesuai');
+        throw new Error(json?.message || 'Respon server belum siap');
       }
     } catch {
       failCountRef.current += 1;
-      // If we already have cached data, do NOT alarm the user by turning status offline on temporary mobile glitches
-      const hasCached = !!localStorage.getItem(CMS_CONFIG.cacheKey);
+      const hasCached = hasUsableLocalCache();
+
       if (hasCached && failCountRef.current < 4) {
-        // Keep status as active since local data is completely usable
         setCmsStatus({ text: 'CMS Aktif', state: 'ok' });
       } else {
         setCmsStatus({ text: 'Mode Cadangan', state: 'offline' });
+      }
+
+      // Self-healing auto-retry when online so temporary cellular/Apps Script congestion recovers automatically
+      if (
+        typeof navigator === 'undefined' ||
+        navigator.onLine !== false
+      ) {
+        if (failCountRef.current <= 5) {
+          const backoffMs = Math.min(20000, 5000 * failCountRef.current);
+          autoRetryTimerRef.current = setTimeout(() => {
+            if (!isAdminOpenRef.current) {
+              loadCMS(true, true);
+            }
+          }, backoffMs);
+        }
       }
     } finally {
       isFetchingRef.current = false;
@@ -239,14 +312,14 @@ export default function App() {
     // 1. Initial fetch
     loadCMS();
 
-    // 2. Realtime Polling: Check server every 25 seconds (friendly for cellular data, prevents rate-limits)
+    // 2. Realtime Polling: Check server every 45 seconds (prevents Apps Script rate-limit on large HD payloads)
     const interval = setInterval(() => {
       if (!isAdminOpenRef.current && !document.hidden) {
         loadCMS(true);
       }
-    }, 25000);
+    }, 45000);
 
-    // 3. Sync immediately when user switches back to tab or unlocks phone
+    // 3. Sync when user switches back to tab or unlocks phone (throttled via lastFetchCompletedAtRef)
     const handleVisibilityChange = () => {
       if (!document.hidden && !isAdminOpenRef.current) {
         loadCMS(true);
@@ -258,7 +331,8 @@ export default function App() {
 
     // 4. Sync immediately when network reconnects (e.g. WiFi <-> Cellular switch)
     const handleOnline = () => {
-      loadCMS(true);
+      failCountRef.current = 0;
+      loadCMS(true, true);
     };
 
     window.addEventListener('focus', handleFocus);
@@ -271,12 +345,16 @@ export default function App() {
       channel = new BroadcastChannel('report_md_sync_channel');
       channel.onmessage = (event) => {
         if (event.data?.type === 'SYNC_DATA') {
-          if (event.data.menus) setMenus(event.data.menus);
+          if (event.data.menus) {
+            setMenus(event.data.menus);
+            menusRef.current = event.data.menus;
+          }
           if (event.data.settings) {
             const synced = unpackSettingsFromCloud(event.data.settings, settingsRef.current);
             settingsRef.current = synced;
             setSettings(synced);
           }
+          failCountRef.current = 0;
           setLastSyncDate(new Date());
           setCmsStatus({ text: 'CMS Aktif', state: 'ok' });
         }
@@ -288,13 +366,18 @@ export default function App() {
       if (e.key === CMS_CONFIG.cacheKey && e.newValue) {
         try {
           const parsed = JSON.parse(e.newValue);
-          if (parsed.data && Array.isArray(parsed.data)) setMenus(parsed.data);
-          if (parsed.settings) {
+          if (parsed.data && Array.isArray(parsed.data)) {
+            setMenus(parsed.data);
+            menusRef.current = parsed.data;
+          }
+          if (parsed.settings && !parsed.compact) {
             const synced = unpackSettingsFromCloud(parsed.settings, settingsRef.current);
             settingsRef.current = synced;
             setSettings(synced);
           }
+          failCountRef.current = 0;
           setLastSyncDate(new Date());
+          setCmsStatus({ text: 'CMS Aktif', state: 'ok' });
         } catch {}
       }
     };
@@ -302,6 +385,7 @@ export default function App() {
 
     return () => {
       clearInterval(interval);
+      if (autoRetryTimerRef.current) clearTimeout(autoRetryTimerRef.current);
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('online', handleOnline);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -400,9 +484,9 @@ export default function App() {
         {/* ============================================================== */}
         {/* 1. BRAND HEADER (Matching screenshot logo, title & CMS badge) */}
         {/* ============================================================== */}
-        <header className="flex items-center justify-between gap-3 pt-1 pb-1">
-          {/* Left: Logo BTB + Title Lockup */}
-          <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+        <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 pt-1 pb-1">
+          {/* Top Row (Android/Mobile) / Left Column (Tablet/Desktop): Logo BTB + Full Readable Title Lockup */}
+          <div className="flex items-center gap-2 sm:gap-3.5 min-w-0 w-full sm:w-auto sm:flex-1">
             {/* Mascot & BTB Branding / Custom Logo */}
             <BtbLogo
               className="h-9 sm:h-11 md:h-12"
@@ -411,22 +495,23 @@ export default function App() {
             />
 
             {/* Vertical Blue Separator Line */}
-            <div className="h-9 sm:h-11 w-[2.5px] bg-[#164fc1] rounded-full shrink-0" />
+            <div className="h-8 sm:h-11 w-[2.5px] bg-[#164fc1] rounded-full shrink-0" />
 
-            {/* Title & Subtitle */}
-            <div className="min-w-0">
-              <h1 className="font-black text-[#1244a5] text-base sm:text-lg md:text-xl lg:text-2xl tracking-tight leading-none uppercase truncate">
+            {/* Title & Subtitle — Full legibility without ellipsis on Android phones */}
+            <div className="min-w-0 flex-1">
+              <h1 className="font-black text-[#1244a5] text-[15px] min-[375px]:text-base sm:text-lg md:text-xl lg:text-2xl tracking-tight leading-tight uppercase break-words">
                 {settings.title || 'REPORT MD PURWOKERTO'}
               </h1>
-              <p className="text-[#31557e] text-[11px] sm:text-xs md:text-sm font-semibold tracking-wide leading-tight mt-1 truncate">
+              <p className="text-[#31557e] text-[11px] sm:text-xs md:text-sm font-semibold tracking-wide leading-snug mt-0.5 break-words">
                 {settings.subtitle || 'KAO Peduli Inovasi'}
               </p>
             </div>
           </div>
 
-          {/* Right: CMS Status Badge, Manual Refresh, Install PWA & Real-time Live Clock */}
-          <div className="flex flex-col items-end shrink-0 text-right">
-            <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Compact Utility Row (Mobile) / Right Column (Tablet/Desktop): Clock, Sync, Install PWA & CMS Status */}
+          <div className="flex flex-wrap items-center justify-between sm:flex-col sm:items-end gap-1.5 sm:gap-0 shrink-0 w-full sm:w-auto pt-1.5 sm:pt-0 border-t border-blue-200/45 sm:border-t-0">
+            {/* Action Controls: Pasang di HP, Refresh, CMS Status */}
+            <div className="flex items-center gap-1.5 sm:gap-2 order-2 sm:order-1 ml-auto sm:ml-0">
               {!isStandalone && (
                 <button
                   type="button"
@@ -434,7 +519,7 @@ export default function App() {
                   title="Instal aplikasi ke Layar Utama HP"
                   className="flex items-center gap-1 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:scale-95 text-white font-bold px-2 py-0.5 rounded-full text-[10px] sm:text-xs shadow-2xs transition-all cursor-pointer"
                 >
-                  <Smartphone className="w-3 h-3" />
+                  <Smartphone className="w-3 h-3 shrink-0" />
                   <span>Pasang di HP</span>
                 </button>
               )}
@@ -450,30 +535,48 @@ export default function App() {
                 <RefreshCw className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               </button>
 
-              <div className="flex items-center gap-1.5 bg-emerald-50/90 text-emerald-800 border border-emerald-200/70 px-2 sm:px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold shadow-2xs backdrop-blur-xs">
+              <button
+                type="button"
+                onClick={() => loadCMS(true, true)}
+                title={
+                  cmsStatus.state === 'offline'
+                    ? 'Ketuk untuk menyinkronkan ulang ke Cloud'
+                    : 'Status koneksi database CMS'
+                }
+                className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold shadow-2xs backdrop-blur-xs transition-colors cursor-pointer ${
+                  cmsStatus.state === 'offline'
+                    ? 'bg-amber-50/95 text-amber-800 border border-amber-300/80 hover:bg-amber-100'
+                    : 'bg-emerald-50/90 text-emerald-800 border border-emerald-200/70 hover:bg-emerald-100/80'
+                }`}
+              >
                 <span
                   className={`w-2 h-2 rounded-full shrink-0 ${
                     cmsStatus.state === 'ok'
                       ? 'bg-emerald-500 animate-pulse'
                       : cmsStatus.state === 'loading'
                       ? 'bg-amber-500 animate-spin'
-                      : 'bg-slate-400'
+                      : 'bg-amber-500'
                   }`}
                 />
                 <span>{cmsStatus.text}</span>
+              </button>
+            </div>
+
+            {/* Jam Digital Real-time & Keterangan Sinkronisasi */}
+            <div className="flex items-center sm:flex-col sm:items-end gap-1.5 sm:gap-0 order-1 sm:order-2">
+              <div className="flex items-center gap-1 sm:mt-1 text-[10px] sm:text-xs font-mono font-bold text-slate-800 bg-white/80 border border-blue-200/60 px-2 py-0.5 rounded-md shadow-2xs">
+                <Clock className="w-3 h-3 text-[#1244a5] shrink-0" />
+                <span>{formattedClock}</span>
               </div>
-            </div>
 
-            {/* Jam Digital Real-time (Berjalan aktif setiap detik) */}
-            <div className="flex items-center gap-1 mt-1 text-[10px] sm:text-xs font-mono font-bold text-slate-800 bg-white/80 border border-blue-200/60 px-2 py-0.5 rounded-md shadow-2xs">
-              <Clock className="w-3 h-3 text-[#1244a5] shrink-0" />
-              <span>{formattedClock}</span>
+              <span
+                className={`${
+                  isStandalone ? 'inline' : 'hidden min-[460px]:inline'
+                } sm:inline text-[9px] sm:text-[10px] text-slate-500 font-medium sm:mt-0.5`}
+              >
+                {isRefreshing ? 'Menyinkronkan...' : `Sinkron: ${syncLabel}`}
+              </span>
             </div>
-
-            {/* Keterangan Sinkronisasi */}
-            <span className="text-[9px] sm:text-[10px] text-slate-500 font-medium mt-0.5">
-              {isRefreshing ? 'Menyinkronkan...' : `Sinkron: ${syncLabel}`}
-            </span>
           </div>
         </header>
 

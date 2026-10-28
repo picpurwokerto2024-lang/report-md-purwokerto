@@ -53,10 +53,10 @@
   <div class="max-w-[920px] mx-auto px-3.5 sm:px-5 md:px-6 pt-3 sm:pt-5 space-y-2.5 sm:space-y-3.5">
 
     <!-- 1. HEADER (BTB Logo + Title + CMS Status) -->
-    <header class="flex items-center justify-between gap-3 pt-1 pb-1">
-      <div class="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+    <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 pt-1 pb-1">
+      <div class="flex items-center gap-2 sm:gap-3.5 min-w-0 w-full sm:w-auto sm:flex-1">
         <!-- Logo Container -->
-        <div id="brandLogoContainer" class="flex items-center gap-2 select-none shrink-0 h-9 sm:h-11 md:h-12">
+        <div id="brandLogoContainer" class="flex items-center gap-1.5 sm:gap-2 select-none shrink-0 h-9 sm:h-11 md:h-12">
           <!-- Default SVG Mascot Bee + BTB -->
           <svg viewBox="0 0 100 90" class="h-full w-auto drop-shadow-sm shrink-0" fill="none" xmlns="http://www.w3.org/2000/svg">
             <ellipse cx="40" cy="26" rx="18" ry="12" transform="rotate(-30 40 26)" fill="#BAE6FD" fill-opacity="0.85" stroke="#0284C7" stroke-width="2.5"/>
@@ -75,35 +75,37 @@
             <path d="M50 49 Q55 54 60 49" stroke="#1E293B" stroke-width="2.2" stroke-linecap="round"/>
             <ellipse cx="62" cy="47" rx="3" ry="2" fill="#F472B6" fill-opacity="0.6"/>
           </svg>
-          <span id="logoTextEl" class="font-extrabold text-2xl md:text-3xl tracking-tight text-[#EAB308] drop-shadow-[0_1.5px_0_#1E3A8A]">BTB</span>
+          <span id="logoTextEl" class="font-extrabold text-xl sm:text-2xl md:text-3xl tracking-tight text-[#EAB308] drop-shadow-[0_1.5px_0_#1E3A8A]">BTB</span>
         </div>
 
-        <div class="h-9 sm:h-11 w-[2.5px] bg-[#164fc1] rounded-full shrink-0"></div>
+        <div class="h-8 sm:h-11 w-[2.5px] bg-[#164fc1] rounded-full shrink-0"></div>
 
-        <div class="min-w-0">
-          <h1 id="siteTitle" class="font-black text-[#1244a5] text-base sm:text-lg md:text-xl lg:text-2xl tracking-tight leading-none uppercase truncate">
+        <div class="min-w-0 flex-1">
+          <h1 id="siteTitle" class="font-black text-[#1244a5] text-[15px] min-[375px]:text-base sm:text-lg md:text-xl lg:text-2xl tracking-tight leading-tight uppercase break-words">
             REPORT MD PURWOKERTO
           </h1>
-          <p id="siteSubtitle" class="text-[#31557e] text-[11px] sm:text-xs md:text-sm font-semibold tracking-wide leading-tight mt-1 truncate">
+          <p id="siteSubtitle" class="text-[#31557e] text-[11px] sm:text-xs md:text-sm font-semibold tracking-wide leading-snug mt-0.5 break-words">
             KAO Peduli Inovasi
           </p>
         </div>
       </div>
 
       <!-- CMS Status & Live Clock -->
-      <div class="flex flex-col items-end shrink-0 text-right">
-        <div class="flex items-center gap-1.5 sm:gap-2">
+      <div class="flex flex-wrap items-center justify-between sm:flex-col sm:items-end gap-1.5 sm:gap-0 shrink-0 w-full sm:w-auto pt-1.5 sm:pt-0 border-t border-blue-200/45 sm:border-t-0">
+        <div class="flex items-center gap-1.5 sm:gap-2 order-2 sm:order-1 ml-auto sm:ml-0">
           <button id="refreshCmsBtn" type="button" class="p-1 sm:p-1.5 rounded-full text-blue-700 bg-blue-100/70 hover:bg-blue-200 transition-all cursor-pointer shadow-2xs hover:rotate-45 text-xs font-bold" title="Segarkan Data">&#x21bb;</button>
           <div class="flex items-center gap-1.5 bg-emerald-50/90 text-emerald-800 border border-emerald-200/70 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold shadow-xs">
             <span id="statusDot" class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             <span id="cmsStatus">CMS Aktif</span>
           </div>
         </div>
-        <div class="flex items-center gap-1 mt-1 text-[10px] sm:text-xs font-mono font-bold text-slate-800 bg-white/80 border border-blue-200/60 px-2 py-0.5 rounded-md shadow-2xs">
-          <span>🕒</span>
-          <span id="liveClockDisplay">--:--:-- WIB</span>
+        <div class="flex items-center sm:flex-col sm:items-end gap-1.5 sm:gap-0 order-1 sm:order-2">
+          <div class="flex items-center gap-1 sm:mt-1 text-[10px] sm:text-xs font-mono font-bold text-slate-800 bg-white/80 border border-blue-200/60 px-2 py-0.5 rounded-md shadow-2xs">
+            <span>🕒</span>
+            <span id="liveClockDisplay">--:--:-- WIB</span>
+          </div>
+          <span id="syncTime" class="text-[9px] sm:text-[10px] text-slate-500 font-medium sm:mt-0.5">Sinkron: Baru saja</span>
         </div>
-        <span id="syncTime" class="text-[9px] sm:text-[10px] text-slate-500 font-medium mt-0.5">Sinkron: Baru saja</span>
       </div>
     </header>
 
