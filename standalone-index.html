@@ -345,9 +345,19 @@
                   </label>
                 </div>
               </div>
-              <div>
-                <label class="block text-[11px] font-bold text-slate-700 mb-1">Teks Singkatan Logo:</label>
-                <input id="logoTextInput" type="text" value="BTB" placeholder="BTB" class="w-full text-xs bg-white border border-slate-300 rounded-xl px-3 py-1.5 outline-none">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-700 mb-1">Teks di Sebelah Logo:</label>
+                  <input id="logoTextInput" type="text" value="BTB" placeholder="Contoh: KAO / BTB" class="w-full text-xs bg-white border border-slate-300 rounded-xl px-3 py-1.5 outline-none">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-700 mb-1">Warna Tulisan Samping Logo:</label>
+                  <div class="flex items-center gap-2">
+                    <input id="logoTextColorInput" type="color" value="#eab308" class="w-8 h-8 p-0 border border-slate-300 rounded-lg cursor-pointer bg-white">
+                    <button type="button" onclick="document.getElementById('logoTextColorInput').value='#009944';state.settings.logoTextColor='#009944';updateAdminLogoPreview();" class="px-2 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 cursor-pointer">Hijau KAO</button>
+                    <button type="button" onclick="document.getElementById('logoTextColorInput').value='#1244a5';state.settings.logoTextColor='#1244a5';updateAdminLogoPreview();" class="px-2 py-1 rounded-lg text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200 cursor-pointer">Biru</button>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -456,10 +466,15 @@
       if (raw.logoUrl_part2) logoUrl += raw.logoUrl_part2;
       if (raw.logoUrl_part3) logoUrl += raw.logoUrl_part3;
 
+      let logoTextColor = /^#[0-9a-fA-F]{6}$/.test(String(fb.logoTextColor || "")) ? fb.logoTextColor : "#eab308";
+      if (meta && typeof meta.ltc === "string" && /^#[0-9a-fA-F]{6}$/.test(meta.ltc)) logoTextColor = meta.ltc;
+      else if (typeof raw.logoTextColor === "string" && /^#[0-9a-fA-F]{6}$/.test(raw.logoTextColor)) logoTextColor = raw.logoTextColor;
+
       return {
         ...fb,
         ...raw,
         logoUrl,
+        logoTextColor,
         searchPlaceholder: cleanPlace,
         banners,
         watermarkEnabled: wmEnabled,
@@ -471,14 +486,17 @@
     function packCloudSettings(st) {
       const rawPlace = String(st.searchPlaceholder || "Cari menu atau nama MD...");
       const cleanPlace = rawPlace.indexOf(META_DELIMITER) >= 0 ? rawPlace.slice(0, rawPlace.indexOf(META_DELIMITER)) : rawPlace;
+      const ltc = /^#[0-9a-fA-F]{6}$/.test(String(st.logoTextColor || "")) ? String(st.logoTextColor).toLowerCase() : "#eab308";
       const meta = {
         we: st.watermarkEnabled !== false && String(st.watermarkEnabled) !== "false",
         wt: st.watermarkText ?? "",
         wl: st.watermarkLink ?? "",
+        ltc,
         bf: (st.banners || []).map(b => b.fitMode === "cover" ? "cover" : "contain")
       };
       return {
         ...st,
+        logoTextColor: ltc,
         searchPlaceholder: cleanPlace + META_DELIMITER + JSON.stringify(meta),
         watermarkEnabled: meta.we,
         watermarkText: meta.wt,
@@ -745,11 +763,16 @@
       document.getElementById("siteSubtitle").textContent = st.subtitle || "KAO Peduli Inovasi";
       document.getElementById("searchInput").placeholder = st.searchPlaceholder || "Cari menu atau nama MD...";
 
+      const logoColor = /^#[0-9a-fA-F]{6}$/.test(String(st.logoTextColor || "")) ? st.logoTextColor : "#eab308";
+      const hexClean = logoColor.slice(1);
+      const lum = (parseInt(hexClean.slice(0,2),16)*299 + parseInt(hexClean.slice(2,4),16)*587 + parseInt(hexClean.slice(4,6),16)*114)/1000;
+      const logoShadow = lum > 165 ? "drop-shadow-[0_1.5px_0_#1E3A8A]" : "drop-shadow-[0_1px_1px_rgba(15,23,42,0.16)]";
+
       const logoBox = document.getElementById("brandLogoContainer");
       if (st.logoUrl) {
         logoBox.innerHTML = `
-          <img src="${esc(st.logoUrl)}" alt="Logo" class="h-full w-auto max-w-[130px] object-contain drop-shadow-sm" onerror="this.style.display='none'">
-          ${st.logoText && st.logoText !== 'BTB' ? `<span class="font-extrabold text-2xl md:text-3xl text-[#EAB308] drop-shadow-[0_1.5px_0_#1E3A8A]">${esc(st.logoText)}</span>` : ''}
+          <img src="${esc(st.logoUrl)}" alt="Logo" class="h-full w-auto max-w-[96px] sm:max-w-[130px] object-contain drop-shadow-sm" onerror="this.style.display='none'">
+          ${st.logoText && st.logoText !== 'BTB' ? `<span style="color:${esc(logoColor)}" class="font-extrabold text-lg sm:text-xl md:text-2xl ${logoShadow}">${esc(st.logoText)}</span>` : ''}
         `;
       } else {
         logoBox.innerHTML = `
@@ -770,7 +793,7 @@
             <path d="M50 49 Q55 54 60 49" stroke="#1E293B" stroke-width="2.2" stroke-linecap="round"/>
             <ellipse cx="62" cy="47" rx="3" ry="2" fill="#F472B6" fill-opacity="0.6"/>
           </svg>
-          <span class="font-extrabold text-2xl md:text-3xl text-[#EAB308] drop-shadow-[0_1.5px_0_#1E3A8A]">${esc(st.logoText || 'BTB')}</span>
+          <span style="color:${esc(logoColor)}" class="font-extrabold text-xl sm:text-2xl md:text-3xl ${logoShadow}">${esc(st.logoText || 'BTB')}</span>
         `;
       }
 
@@ -1119,6 +1142,7 @@
       document.getElementById("searchPlaceInput").value = state.settings.searchPlaceholder || "Cari menu atau nama MD...";
       document.getElementById("logoUrlInput").value = state.settings.logoUrl || "";
       document.getElementById("logoTextInput").value = state.settings.logoText || "BTB";
+      document.getElementById("logoTextColorInput").value = /^#[0-9a-fA-F]{6}$/.test(String(state.settings.logoTextColor || "")) ? state.settings.logoTextColor : "#eab308";
       document.getElementById("watermarkEnabledInput").checked = state.settings.watermarkEnabled !== false && String(state.settings.watermarkEnabled) !== "false";
       document.getElementById("watermarkTextInput").value = state.settings.watermarkText !== undefined ? state.settings.watermarkText : "Powered by Intisari";
       document.getElementById("watermarkLinkInput").value = state.settings.watermarkLink || "";
@@ -1345,10 +1369,12 @@
     // Logo handlers
     function updateAdminLogoPreview() {
       const p = document.getElementById("adminLogoPreview");
+      const c = /^#[0-9a-fA-F]{6}$/.test(String(state.settings.logoTextColor || "")) ? state.settings.logoTextColor : "#eab308";
+      const txt = state.settings.logoText || "BTB";
       if (state.settings.logoUrl) {
-        p.innerHTML = `<img src="${esc(state.settings.logoUrl)}" class="h-8 max-w-[100px] object-contain">`;
+        p.innerHTML = `<div class="flex items-center gap-2"><img src="${esc(state.settings.logoUrl)}" class="h-8 max-w-[100px] object-contain">${txt !== 'BTB' ? `<span style="color:${esc(c)}" class="font-extrabold text-lg">${esc(txt)}</span>` : ''}</div>`;
       } else {
-        p.innerHTML = `<span class="font-extrabold text-[#EAB308] text-xl">BTB (Default)</span>`;
+        p.innerHTML = `<span style="color:${esc(c)}" class="font-extrabold text-xl">${esc(txt)} (Default)</span>`;
       }
     }
 
@@ -1386,14 +1412,21 @@
       state.settings.logoUrl = this.value;
       updateAdminLogoPreview();
     };
-    document.getElementById("logoTextInput").onchange = function() {
+    document.getElementById("logoTextInput").oninput = function() {
       state.settings.logoText = this.value;
+      updateAdminLogoPreview();
+    };
+    document.getElementById("logoTextColorInput").oninput = function() {
+      state.settings.logoTextColor = this.value;
+      updateAdminLogoPreview();
     };
     document.getElementById("resetLogoBtn").onclick = () => {
       state.settings.logoUrl = "";
       state.settings.logoText = "BTB";
+      state.settings.logoTextColor = "#eab308";
       document.getElementById("logoUrlInput").value = "";
       document.getElementById("logoTextInput").value = "BTB";
+      document.getElementById("logoTextColorInput").value = "#eab308";
       updateAdminLogoPreview();
     };
 
@@ -1410,6 +1443,7 @@
       state.settings.searchPlaceholder = document.getElementById("searchPlaceInput").value;
       state.settings.logoUrl = document.getElementById("logoUrlInput").value;
       state.settings.logoText = document.getElementById("logoTextInput").value;
+      state.settings.logoTextColor = document.getElementById("logoTextColorInput").value || "#eab308";
       const wmTextVal = document.getElementById("watermarkTextInput").value.trim();
       state.settings.watermarkText = wmTextVal;
       state.settings.watermarkEnabled = document.getElementById("watermarkEnabledInput").checked && wmTextVal.length > 0;

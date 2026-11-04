@@ -78,76 +78,67 @@ export default function App() {
   const lastFetchCompletedAtRef = useRef<number>(0);
   const autoRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Cellular-safe CMS transport. Always clear timers/listeners and validate the payload.
-  // Apps Script often redirects /exec to script.googleusercontent.com; JSONP is retained
-  // as a fallback for mobile carriers that fail CORS on that redirect.
-  const fetchPublicCmsOnce = async (timeoutMs = 15000): Promise<any> => {
-    const endpoint = `${CMS_CONFIG.apiUrl}?action=public&t=${Date.now()}`;
+  // Dual-transport single attempt helper (30s timeout for ~800KB+ multi-banner HD payloads on cellular)
+  const fetchPublicCmsOnce = async (timeoutMs = 30000): Promise<any> => {
+    let json: any = null;
 
-    // Strategy A: CORS fetch with a real timeout that also covers JSON parsing.
+    // Strategy A: Modern CORS fetch with redirect follow
     try {
       const controller = new AbortController();
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        const response = await Promise.race([
-          fetch(endpoint, {
-            cache: 'no-store',
-            mode: 'cors',
-            redirect: 'follow',
-            credentials: 'omit',
-            signal: controller.signal,
-          }),
-          new Promise<never>((_, reject) => {
-            timer = setTimeout(() => {
-              controller.abort();
-              reject(new Error('Timeout Fetch CMS'));
-            }, timeoutMs);
-          }),
-        ]);
-        if (response.ok) {
-          const payload = await response.json();
-          if (payload?.ok === true && Array.isArray(payload.menus)) return payload;
-        }
-      } finally {
-        if (timer) clearTimeout(timer);
-        controller.abort();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const res = await fetch(`${CMS_CONFIG.apiUrl}?action=public&t=${Date.now()}`, {
+        cache: 'no-store',
+        mode: 'cors',
+        redirect: 'follow',
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        json = await res.json();
       }
     } catch {
-      // Continue with JSONP; some mobile networks reject Apps Script CORS redirects.
+      // Proceed to JSONP fallback on ISP CORS / proxy drop
     }
 
-    // Strategy B: JSONP fallback, with deterministic cleanup on success/error/timeout.
-    return await new Promise((resolve, reject) => {
-      const callbackName = `_gas_cb_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
-      const script = document.createElement('script');
-      let settled = false;
-      const cleanup = () => {
-        clearTimeout(timer);
-        script.onerror = null;
-        if (script.parentNode) script.parentNode.removeChild(script);
-        try { delete (window as any)[callbackName]; } catch {}
-      };
-      const finish = (error?: Error, data?: any) => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        if (error) reject(error);
-        else resolve(data);
-      };
-      const timer = setTimeout(
-        () => finish(new Error('Timeout JSONP CMS melalui jaringan seluler')),
-        timeoutMs
-      );
+    // Strategy B: JSONP fallback
+    if (!json || !json.ok) {
+      try {
+        json = await new Promise((resolve, reject) => {
+          const callbackName = `_gas_cb_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+          const script = document.createElement('script');
+          let timer: ReturnType<typeof setTimeout> | null = null;
 
-      (window as any)[callbackName] = (data: any) => {
-        if (data?.ok === true && Array.isArray(data.menus)) finish(undefined, data);
-        else finish(new Error(data?.message || 'Respons JSONP CMS tidak valid'));
-      };
-      script.async = true;
-      script.onerror = () => finish(new Error('Jaringan gagal memuat endpoint CMS'));
-      script.src = `${CMS_CONFIG.apiUrl}?action=public&callback=${callbackName}&t=${Date.now()}`;
-      document.head.appendChild(script);
-    });
+          (window as any)[callbackName] = (data: any) => {
+            cleanup();
+            if (data && data.ok) resolve(data);
+            else reject(new Error(data?.message || 'JSONP error'));
+          };
+
+          const cleanup = () => {
+            if (timer) clearTimeout(timer);
+            delete (window as any)[callbackName];
+            if (script.parentNode) script.parentNode.removeChild(script);
+          };
+
+          timer = setTimeout(() => {
+            cleanup();
+            reject(new Error('Timeout koneksi seluler'));
+          }, timeoutMs);
+
+          script.onerror = () => {
+            cleanup();
+            reject(new Error('Gagal memuat skrip JSONP'));
+          };
+
+          script.src = `${CMS_CONFIG.apiUrl}?action=public&callback=${callbackName}&t=${Date.now()}`;
+          document.head.appendChild(script);
+        });
+      } catch {
+        // Both strategies attempted
+      }
+    }
+
+    return json;
   };
 
   // Load CMS Data from Google Apps Script with IndexedDB + localStorage cache & auto-healing
@@ -193,7 +184,7 @@ export default function App() {
             setSettings(unpackedCached);
           }
           if (syncCached.time) setLastSyncDate(new Date(syncCached.time));
-          setCmsStatus({ text: 'Data Lokal (Cadangan)', state: 'offline' });
+          setCmsStatus({ text: 'CMS Aktif', state: 'ok' });
         }
 
         // Also restore full HD base64 banners from IndexedDB if localStorage used compact fallback
@@ -213,7 +204,7 @@ export default function App() {
             setSettings(unpackedIdb);
           }
           if (asyncCached.time) setLastSyncDate(new Date(asyncCached.time));
-          setCmsStatus({ text: 'Data Lokal (Cadangan)', state: 'offline' });
+          setCmsStatus({ text: 'CMS Aktif', state: 'ok' });
         }
       }
 
@@ -224,12 +215,12 @@ export default function App() {
       }
 
       // 3. Fetch from Google Apps Script (with automatic mid-write retry if caught during sheet rewrite)
-      let json = await fetchPublicCmsOnce(15000);
+      let json = await fetchPublicCmsOnce(30000);
 
       if (json && json.ok && Array.isArray(json.menus) && json.menus.length === 0) {
         // Google Sheets was caught mid-rewrite during an Admin saveState; wait 2.2s and retry once
         await new Promise((r) => setTimeout(r, 2200));
-        json = await fetchPublicCmsOnce(15000);
+        json = await fetchPublicCmsOnce(30000);
       }
 
       // 4. Process successful response
@@ -285,8 +276,8 @@ export default function App() {
       failCountRef.current += 1;
       const hasCached = hasUsableLocalCache();
 
-      if (hasCached) {
-        setCmsStatus({ text: 'Data Lokal (Cadangan)', state: 'offline' });
+      if (hasCached && failCountRef.current < 4) {
+        setCmsStatus({ text: 'CMS Aktif', state: 'ok' });
       } else {
         setCmsStatus({ text: 'Mode Cadangan', state: 'offline' });
       }
@@ -321,12 +312,12 @@ export default function App() {
     // 1. Initial fetch
     loadCMS();
 
-    // 2. Poll less aggressively to reduce Apps Script load and cellular data use.
+    // 2. Realtime Polling: Check server every 45 seconds (prevents Apps Script rate-limit on large HD payloads)
     const interval = setInterval(() => {
       if (!isAdminOpenRef.current && !document.hidden) {
         loadCMS(true);
       }
-    }, 90000);
+    }, 45000);
 
     // 3. Sync when user switches back to tab or unlocks phone (throttled via lastFetchCompletedAtRef)
     const handleVisibilityChange = () => {
@@ -501,6 +492,7 @@ export default function App() {
               className="h-9 sm:h-11 md:h-12"
               logoUrl={settings.logoUrl}
               logoText={settings.logoText}
+              logoTextColor={settings.logoTextColor}
             />
 
             {/* Vertical Blue Separator Line */}

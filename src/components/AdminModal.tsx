@@ -29,6 +29,8 @@ import {
   unpackSettingsFromCloud,
   stripSearchPlaceholderMeta,
   writeLocalWatermark,
+  writeLocalLogoStyle,
+  normalizeHexColor,
   isTruncatedDataImageUrl,
   writeLocalCmsSync,
 } from '../utils/settingsSync';
@@ -43,6 +45,18 @@ interface AdminModalProps {
 }
 
 const HEX_REGEX = /^#[0-9a-fA-F]{6}$/;
+
+const LOGO_TEXT_COLOR_PRESETS = [
+  { label: 'Hijau KAO', color: '#009944' },
+  { label: 'Hijau Cerah', color: '#00a651' },
+  { label: 'Biru Utama', color: '#1244a5' },
+  { label: 'Biru Cerah', color: '#0284c7' },
+  { label: 'Kuning Emas', color: '#eab308' },
+  { label: 'Merah', color: '#dc2626' },
+  { label: 'Ungu', color: '#6849d9' },
+  { label: 'Hitam Navy', color: '#0f172a' },
+  { label: 'Putih', color: '#ffffff' },
+];
 
 const PRESET_IMAGES = [
   { label: 'Gunung Slamet Purwokerto', url: banner1 },
@@ -96,6 +110,7 @@ export default function AdminModal({
   const settingsStateRef = useRef<SiteSettings>(settings);
   const pinRef = useRef<string>(pin);
   const wmSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const logoStyleSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bannerSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingCloudSyncRef = useRef<(() => void) | null>(null);
   const cloudSaveChainRef = useRef<Promise<{ ok: boolean; message?: string }>>(
@@ -138,6 +153,10 @@ export default function AdminModal({
     if (wmSyncTimerRef.current) {
       clearTimeout(wmSyncTimerRef.current);
       wmSyncTimerRef.current = null;
+    }
+    if (logoStyleSyncTimerRef.current) {
+      clearTimeout(logoStyleSyncTimerRef.current);
+      logoStyleSyncTimerRef.current = null;
     }
     if (bannerSyncTimerRef.current) {
       clearTimeout(bannerSyncTimerRef.current);
@@ -359,6 +378,11 @@ export default function AdminModal({
                 ts: saveTs,
                 synced: true,
               });
+              writeLocalLogoStyle({
+                ltc: normalizeHexColor(cleanSettings.logoTextColor, '#eab308'),
+                ts: saveTs,
+                synced: true,
+              });
               onUpdateData(cleanMenus, cleanSettings);
               return { ok: true };
             }
@@ -540,11 +564,92 @@ export default function AdminModal({
     }
   };
 
+  // Instant Logo Text & Color Commit: updates React state + localStorage immediately AND syncs to Cloud
+  const commitLogoStyleChange = (
+    patch: Partial<Pick<SiteSettings, 'logoTextColor' | 'logoText' | 'logoUrl'>>,
+    immediateCloudSync: boolean
+  ) => {
+    const saveTs = Date.now();
+    const current = settingsStateRef.current;
+    const nextLogoColor =
+      patch.logoTextColor !== undefined
+        ? normalizeHexColor(patch.logoTextColor, current.logoTextColor || '#eab308')
+        : normalizeHexColor(current.logoTextColor, '#eab308');
+    const nextLogoText = patch.logoText !== undefined ? patch.logoText : current.logoText ?? 'BTB';
+    const nextLogoUrl = patch.logoUrl !== undefined ? patch.logoUrl : current.logoUrl ?? '';
+
+    const updatedSettings: SiteSettings = {
+      ...current,
+      searchPlaceholder: stripSearchPlaceholderMeta(current.searchPlaceholder),
+      banners: bannersRef.current,
+      logoUrl: nextLogoUrl,
+      logoText: nextLogoText,
+      logoTextColor: nextLogoColor,
+      watermarkEnabled: current.watermarkEnabled !== false,
+      watermarkText: (current.watermarkText ?? '').trim(),
+      watermarkLink: (current.watermarkLink ?? '').trim(),
+    };
+
+    settingsStateRef.current = updatedSettings;
+    setSettings(updatedSettings);
+
+    writeLocalLogoStyle({
+      ltc: nextLogoColor,
+      ts: saveTs,
+      synced: false,
+    });
+
+    const cleanMenus = menusRef.current.map((m, idx) => ({
+      ...m,
+      urutan: Number(m.urutan || idx + 1),
+      warna: m.warna && HEX_REGEX.test(m.warna) ? m.warna : '',
+      fotoUrl: m.fotoUrl ? String(m.fotoUrl).trim() : '',
+    }));
+
+    onUpdateData(cleanMenus, updatedSettings);
+    saveCmsCache({ time: saveTs, data: cleanMenus, settings: updatedSettings });
+
+    try {
+      const channel = new BroadcastChannel('report_md_sync_channel');
+      channel.postMessage({ type: 'SYNC_DATA', menus: cleanMenus, settings: updatedSettings });
+      channel.close();
+    } catch {}
+
+    const runCloudSync = () => {
+      pendingCloudSyncRef.current = null;
+      setSaveStatus('Menyimpan warna & teks logo ke Cloud...');
+      pushStateToCloud(cleanMenus, updatedSettings, saveTs).then((result) => {
+        if (result.ok) {
+          setSaveStatus('✅ Warna & teks logo berhasil diperbarui permanen!');
+        } else {
+          setSaveStatus('✅ Warna & teks logo aktif dan tersimpan di perangkat ini.');
+        }
+      });
+    };
+
+    if (logoStyleSyncTimerRef.current) {
+      clearTimeout(logoStyleSyncTimerRef.current);
+      logoStyleSyncTimerRef.current = null;
+    }
+
+    if (immediateCloudSync) {
+      runCloudSync();
+    } else {
+      setSaveStatus('Warna diterapkan — menyimpan otomatis...');
+      pendingCloudSyncRef.current = runCloudSync;
+      logoStyleSyncTimerRef.current = setTimeout(runCloudSync, 750);
+    }
+  };
+
   // Save changes handler
   const handleSaveAll = async () => {
     if (wmSyncTimerRef.current) {
       clearTimeout(wmSyncTimerRef.current);
       wmSyncTimerRef.current = null;
+    }
+    if (logoStyleSyncTimerRef.current) {
+      clearTimeout(logoStyleSyncTimerRef.current);
+      logoStyleSyncTimerRef.current = null;
     }
     if (bannerSyncTimerRef.current) {
       clearTimeout(bannerSyncTimerRef.current);
@@ -568,22 +673,29 @@ export default function AdminModal({
 
       const trimmedWmText = (settings.watermarkText ?? '').trim();
       const effectiveWatermarkEnabled = settings.watermarkEnabled !== false;
+      const normalizedLogoColor = normalizeHexColor(settings.logoTextColor, '#eab308');
 
       const cleanSettings: SiteSettings = {
         ...settings,
         searchPlaceholder: stripSearchPlaceholderMeta(settings.searchPlaceholder),
         banners: latestBanners,
+        logoTextColor: normalizedLogoColor,
         watermarkText: trimmedWmText,
         watermarkEnabled: effectiveWatermarkEnabled,
         watermarkLink: (settings.watermarkLink || '').trim(),
       };
 
-      // Write timestamped watermark & CMS sync state immediately
+      // Write timestamped watermark, logo color & CMS sync state immediately
       writeLocalCmsSync({ ts: saveTs, synced: false });
       writeLocalWatermark({
         we: effectiveWatermarkEnabled,
         wt: trimmedWmText,
         wl: cleanSettings.watermarkLink || '',
+        ts: saveTs,
+        synced: false,
+      });
+      writeLocalLogoStyle({
+        ltc: normalizedLogoColor,
         ts: saveTs,
         synced: false,
       });
@@ -1858,12 +1970,17 @@ export default function AdminModal({
                     <div className="flex items-center justify-between">
                       <h3 className="text-xs font-bold text-[#1244a5] uppercase tracking-wider flex items-center gap-1.5">
                         <Palette className="w-4 h-4 text-blue-600" />
-                        Logo Perusahaan
+                        Logo Perusahaan &amp; Warna Tulisan Samping Logo
                       </h3>
                       {settings.logoUrl && (
                         <button
                           type="button"
-                          onClick={() => setSettings({ ...settings, logoUrl: '', logoText: 'BTB' })}
+                          onClick={() =>
+                            commitLogoStyleChange(
+                              { logoUrl: '', logoText: 'BTB', logoTextColor: '#eab308' },
+                              true
+                            )
+                          }
                           className="text-[11px] font-semibold text-rose-600 hover:text-rose-800 transition-colors cursor-pointer"
                         >
                           Reset ke Logo Bawaan (BTB)
@@ -1874,10 +1991,11 @@ export default function AdminModal({
                     {/* Live Logo Preview Box */}
                     <div className="p-3 bg-white rounded-xl border border-blue-100 flex items-center justify-between gap-4 shadow-2xs">
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="p-2 bg-slate-50 rounded-lg border border-slate-200/80 flex items-center justify-center min-w-[70px] h-12 shrink-0">
+                        <div className="px-2.5 py-2 bg-slate-50 rounded-lg border border-slate-200/80 flex items-center justify-center min-w-[76px] h-12 shrink-0">
                           <BtbLogo
                             logoUrl={settings.logoUrl}
-                            logoText={settings.logoText || 'BTB'}
+                            logoText={settings.logoText ?? 'BTB'}
+                            logoTextColor={settings.logoTextColor}
                             className="h-8"
                           />
                         </div>
@@ -1886,50 +2004,127 @@ export default function AdminModal({
                             {settings.logoUrl ? 'Menggunakan Logo Kustom' : 'Menggunakan Logo Default (BTB Maskot)'}
                           </p>
                           <p className="text-[11px] text-slate-500 truncate">
-                            Tampil di pojok kiri atas samping judul aplikasi
+                            Pratinjau langsung logo &amp; warna tulisan ({settings.logoText || 'BTB'}) di header
                           </p>
                         </div>
                       </div>
                     </div>
 
                     {/* Logo Source: Upload Button or URL input */}
-                    <div className="space-y-2">
-                      <label className="block text-[11px] font-bold text-slate-700">
-                        Ganti File Logo atau URL Gambar:
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={settings.logoUrl || ''}
-                          onChange={(e) => setSettings({ ...settings, logoUrl: convertGoogleDriveUrl(e.target.value) })}
-                          placeholder="Pilih file logo atau tempel link gambar / Google Drive"
-                          className="flex-1 text-xs text-slate-700 bg-white border border-slate-300 rounded-xl px-3 py-2 outline-none focus:border-blue-600 truncate"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => logoFileInputRef.current?.click()}
-                          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#1244a5] hover:bg-[#0d3680] text-white font-bold text-xs transition-colors shrink-0 cursor-pointer shadow-2xs"
-                        >
-                          <Upload className="w-3.5 h-3.5" />
-                          <span>Pilih File Logo</span>
-                        </button>
+                    <div className="space-y-2.5">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          Ganti File Logo atau URL Gambar:
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={settings.logoUrl || ''}
+                            onChange={(e) =>
+                              setSettings({ ...settings, logoUrl: convertGoogleDriveUrl(e.target.value) })
+                            }
+                            placeholder="Pilih file logo atau tempel link gambar / Google Drive"
+                            className="flex-1 text-xs text-slate-700 bg-white border border-slate-300 rounded-xl px-3 py-2 outline-none focus:border-blue-600 truncate"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => logoFileInputRef.current?.click()}
+                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#1244a5] hover:bg-[#0d3680] text-white font-bold text-xs transition-colors shrink-0 cursor-pointer shadow-2xs"
+                          >
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>Pilih File Logo</span>
+                          </button>
+                        </div>
                       </div>
 
                       {/* Optional Custom Logo Text */}
-                      <div className="pt-1">
+                      <div className="pt-0.5">
                         <label className="block text-[11px] font-bold text-slate-700 mb-0.5">
-                          Teks Logo (Opsional):
+                          Teks di Sebelah Logo (misal: KAO / BTB):
                         </label>
                         <input
                           type="text"
                           value={settings.logoText ?? 'BTB'}
-                          onChange={(e) => setSettings({ ...settings, logoText: e.target.value })}
-                          placeholder="Contoh: BTB atau kosongkan jika logo sudah memiliki teks"
-                          className="w-full text-xs text-slate-700 bg-white border border-slate-300 rounded-xl px-3 py-1.5 outline-none focus:border-blue-600"
+                          onChange={(e) => commitLogoStyleChange({ logoText: e.target.value }, false)}
+                          placeholder="Contoh: KAO atau kosongkan jika logo sudah memiliki teks"
+                          className="w-full text-xs font-semibold text-slate-800 bg-white border border-slate-300 rounded-xl px-3 py-2 outline-none focus:border-blue-600"
                         />
-                        <p className="text-[10px] text-slate-400 mt-1">
-                          Teks ini muncul di samping gambar logo. Kosongkan jika gambar logo Anda sudah memuat teks nama perusahaan.
+                        <p className="text-[10px] text-slate-500 mt-1">
+                          Tulisan ini muncul persis di sebelah logo MD/perusahaan pada header utama.
                         </p>
+                      </div>
+
+                      {/* Logo Text Color Picker & Corporate Swatches */}
+                      <div className="p-3 bg-white rounded-xl border border-blue-100/90 space-y-2.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <label className="block text-[11px] font-bold text-slate-700">
+                            Warna Tulisan di Sebelah Logo ({settings.logoText?.trim() || 'KAO'}):
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => commitLogoStyleChange({ logoTextColor: '#eab308' }, true)}
+                            className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 cursor-pointer"
+                          >
+                            Reset Kuning Default
+                          </button>
+                        </div>
+
+                        {/* Preset Color Swatches */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {LOGO_TEXT_COLOR_PRESETS.map((preset) => {
+                            const currentHex = normalizeHexColor(settings.logoTextColor, '#eab308');
+                            const isSelected = currentHex === preset.color.toLowerCase();
+                            return (
+                              <button
+                                key={preset.color}
+                                type="button"
+                                onClick={() => commitLogoStyleChange({ logoTextColor: preset.color }, true)}
+                                title={`Pilih warna ${preset.label} (${preset.color})`}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-blue-50 border-[#1244a5] text-[#1244a5] ring-2 ring-blue-200 shadow-2xs'
+                                    : 'bg-slate-50 hover:bg-white border-slate-200 text-slate-700'
+                                }`}
+                              >
+                                <span
+                                  style={{ backgroundColor: preset.color }}
+                                  className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0 shadow-2xs"
+                                />
+                                <span>{preset.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Custom Color Picker + Hex Code */}
+                        <div className="flex items-center gap-2.5 pt-1">
+                          <input
+                            type="color"
+                            value={normalizeHexColor(settings.logoTextColor, '#eab308')}
+                            onChange={(e) => commitLogoStyleChange({ logoTextColor: e.target.value }, false)}
+                            title="Pilih warna bebas"
+                            className="w-9 h-9 p-0 border border-slate-300 rounded-lg cursor-pointer shrink-0 bg-white"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <span className="block text-[10px] font-semibold text-slate-500">
+                              Pilih Warna Bebas / Kode HEX:
+                            </span>
+                            <input
+                              type="text"
+                              value={settings.logoTextColor || '#eab308'}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setSettings({ ...settings, logoTextColor: val });
+                                if (HEX_REGEX.test(val.trim())) {
+                                  commitLogoStyleChange({ logoTextColor: val.trim() }, false);
+                                }
+                              }}
+                              placeholder="#009944"
+                              maxLength={7}
+                              className="w-28 text-xs font-mono font-bold text-slate-800 bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1 outline-none focus:border-blue-600 mt-0.5 uppercase"
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>

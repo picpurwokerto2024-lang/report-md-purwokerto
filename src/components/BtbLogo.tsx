@@ -4,14 +4,35 @@ interface BtbLogoProps {
   className?: string;
   logoUrl?: string;
   logoText?: string;
+  logoTextColor?: string;
+}
+
+function getLogoTextShadowClass(hexColor: string): string {
+  const clean = hexColor.replace('#', '');
+  if (clean.length === 6) {
+    const r = parseInt(clean.slice(0, 2), 16);
+    const g = parseInt(clean.slice(2, 4), 16);
+    const b = parseInt(clean.slice(4, 6), 16);
+    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+    if (brightness > 165) {
+      return 'drop-shadow-[0_1.5px_0_#1E3A8A]';
+    }
+  }
+  return 'drop-shadow-[0_1px_1px_rgba(15,23,42,0.16)]';
 }
 
 export default function BtbLogo({
   className = 'h-10',
   logoUrl,
   logoText = 'BTB',
+  logoTextColor = '#eab308',
 }: BtbLogoProps) {
   const [imageError, setImageError] = useState(false);
+  const resolvedColor =
+    logoTextColor && /^#[0-9a-fA-F]{6}$/.test(logoTextColor.trim())
+      ? logoTextColor.trim()
+      : '#EAB308';
+  const shadowClass = getLogoTextShadowClass(resolvedColor);
 
   // If custom logo URL is provided and has not errored
   if (logoUrl && !imageError) {
@@ -25,7 +46,10 @@ export default function BtbLogo({
           onError={() => setImageError(true)}
         />
         {logoText && logoText !== 'BTB' && (
-          <span className="font-extrabold text-lg sm:text-xl md:text-2xl tracking-tight text-[#EAB308] drop-shadow-[0_1.5px_0_#1E3A8A] font-sans">
+          <span
+            style={{ color: resolvedColor }}
+            className={`font-extrabold text-lg sm:text-xl md:text-2xl tracking-tight font-sans transition-colors ${shadowClass}`}
+          >
             {logoText}
           </span>
         )}
@@ -134,8 +158,11 @@ export default function BtbLogo({
         <ellipse cx="62" cy="47" rx="3" ry="2" fill="#F472B6" fillOpacity="0.6" />
       </svg>
 
-      {/* BTB Typography */}
-      <span className="font-extrabold text-xl sm:text-2xl md:text-3xl tracking-tight text-[#EAB308] drop-shadow-[0_1.5px_0_#1E3A8A] font-sans">
+      {/* BTB / Custom Brand Typography */}
+      <span
+        style={{ color: resolvedColor }}
+        className={`font-extrabold text-xl sm:text-2xl md:text-3xl tracking-tight font-sans transition-colors ${shadowClass}`}
+      >
         {logoText || 'BTB'}
       </span>
     </div>

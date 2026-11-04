@@ -192,6 +192,7 @@ function saveState(pin, payload) {
         ['logoUrl_part2', logoPart2],
         ['logoUrl_part3', logoPart3],
         ['logoText', truncateCell_(st.logoText !== undefined ? String(st.logoText) : 'BTB')],
+        ['logoTextColor', cleanColor_(st.logoTextColor) || '#eab308'],
         ['watermarkText', truncateCell_(st.watermarkText !== undefined ? String(st.watermarkText) : 'Powered by Intisari')],
         ['watermarkEnabled', st.watermarkEnabled === false || String(st.watermarkEnabled) === 'false' ? 'false' : 'true'],
         ['watermarkLink', truncateCell_(st.watermarkLink || '')],

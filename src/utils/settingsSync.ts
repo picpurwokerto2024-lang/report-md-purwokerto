@@ -3,12 +3,23 @@ import { CMS_CONFIG, DEFAULT_BANNERS, DEFAULT_SETTINGS } from '../constants';
 
 const META_DELIMITER = '\u2063__CFG__:';
 export const WATERMARK_STORAGE_KEY = 'report_md_watermark_v3';
+export const LOGO_STYLE_STORAGE_KEY = 'report_md_logo_style_v1';
 export const CMS_SYNC_META_KEY = 'report_md_cms_sync_v1';
 
 export interface LocalCmsSyncMeta {
   ts: number;
   synced: boolean;
 }
+
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+
+export const normalizeHexColor = (val: unknown, fallback = '#eab308'): string => {
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (HEX_COLOR_RE.test(trimmed)) return trimmed.toLowerCase();
+  }
+  return fallback.toLowerCase();
+};
 
 /**
  * Detects whether a base64 data:image URL was truncated at Google Sheets' 3-cell (135,000 char) limit.
@@ -47,6 +58,7 @@ interface PackedUiMeta {
   we?: boolean;
   wt?: string;
   wl?: string;
+  ltc?: string;
   bf?: Array<'contain' | 'cover'>;
   ts?: number;
 }
@@ -55,6 +67,12 @@ export interface LocalWatermarkRecord {
   we: boolean;
   wt: string;
   wl: string;
+  ts: number;
+  synced?: boolean;
+}
+
+export interface LocalLogoStyleRecord {
+  ltc: string;
   ts: number;
   synced?: boolean;
 }
@@ -94,6 +112,34 @@ export const writeLocalWatermark = (record: LocalWatermarkRecord): void => {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(WATERMARK_STORAGE_KEY, JSON.stringify(record));
+  } catch {
+    // ignore storage errors
+  }
+};
+
+export const readLocalLogoStyle = (): LocalLogoStyleRecord | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(LOGO_STYLE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && typeof parsed.ltc === 'string' && HEX_COLOR_RE.test(parsed.ltc.trim())) {
+      return {
+        ltc: parsed.ltc.trim().toLowerCase(),
+        ts: typeof parsed.ts === 'number' ? parsed.ts : 0,
+        synced: Boolean(parsed.synced),
+      };
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return null;
+};
+
+export const writeLocalLogoStyle = (record: LocalLogoStyleRecord): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(LOGO_STYLE_STORAGE_KEY, JSON.stringify(record));
   } catch {
     // ignore storage errors
   }
@@ -162,12 +208,20 @@ export const getInitialSettingsFromStorage = (): SiteSettings => {
     };
   }
 
+  const localLogo = readLocalLogoStyle();
+  if (localLogo) {
+    base = {
+      ...base,
+      logoTextColor: localLogo.ltc,
+    };
+  }
+
   return base;
 };
 
 /**
  * Unpacks settings received from Google Apps Script (both legacy deployments and updated Code.gs)
- * or localStorage, preserving watermarkEnabled, watermarkText, watermarkLink, and banner fitMode
+ * or localStorage, preserving watermarkEnabled, watermarkText, watermarkLink, logoTextColor, and banner fitMode
  * with timestamp protection against stale overwrites.
  */
 export const unpackSettingsFromCloud = (
@@ -176,15 +230,18 @@ export const unpackSettingsFromCloud = (
 ): SiteSettings => {
   if (!raw || typeof raw !== 'object') {
     const localWm = readLocalWatermark();
-    if (localWm) {
-      return {
-        ...fallback,
-        watermarkEnabled: localWm.we,
-        watermarkText: localWm.wt,
-        watermarkLink: localWm.wl,
-      };
-    }
-    return { ...fallback };
+    const localLogo = readLocalLogoStyle();
+    return {
+      ...fallback,
+      ...(localWm
+        ? {
+            watermarkEnabled: localWm.we,
+            watermarkText: localWm.wt,
+            watermarkLink: localWm.wl,
+          }
+        : {}),
+      ...(localLogo ? { logoTextColor: localLogo.ltc } : {}),
+    };
   }
 
   const record = raw as Record<string, unknown>;
@@ -305,6 +362,37 @@ export const unpackSettingsFromCloud = (
     }
   }
 
+  // Resolve Logo Text Color with timestamp-aware conflict resolution
+  const localLogo = readLocalLogoStyle();
+  const cloudPackedLtc =
+    packedMeta && typeof packedMeta.ltc === 'string' && HEX_COLOR_RE.test(packedMeta.ltc.trim())
+      ? packedMeta.ltc.trim().toLowerCase()
+      : null;
+
+  const shouldTrustCloudLogoColor =
+    Boolean(cloudPackedLtc) &&
+    (!localLogo ||
+      cloudTs >= localLogo.ts ||
+      (localLogo.synced === true && cloudTs > 0 && cloudTs !== localLogo.ts));
+
+  let logoTextColor: string;
+  if (shouldTrustCloudLogoColor && cloudPackedLtc) {
+    logoTextColor = cloudPackedLtc;
+    if (!localLogo || cloudTs > localLogo.ts || localLogo.ltc !== cloudPackedLtc) {
+      writeLocalLogoStyle({
+        ltc: cloudPackedLtc,
+        ts: cloudTs || Date.now(),
+        synced: true,
+      });
+    }
+  } else if (localLogo) {
+    logoTextColor = localLogo.ltc;
+  } else if (typeof record.logoTextColor === 'string' && HEX_COLOR_RE.test(record.logoTextColor.trim())) {
+    logoTextColor = record.logoTextColor.trim().toLowerCase();
+  } else {
+    logoTextColor = normalizeHexColor(fallback.logoTextColor, DEFAULT_SETTINGS.logoTextColor || '#eab308');
+  }
+
   const intervalNum = Number(record.bannerAutoSlideInterval);
 
   return {
@@ -322,6 +410,7 @@ export const unpackSettingsFromCloud = (
     logoUrl: resolvedLogoUrl,
     logoText:
       typeof record.logoText === 'string' ? record.logoText : fallback.logoText ?? 'BTB',
+    logoTextColor,
     watermarkEnabled,
     watermarkText,
     watermarkLink,
@@ -330,7 +419,7 @@ export const unpackSettingsFromCloud = (
 
 /**
  * Packs SiteSettings for saving to Google Apps Script across dual channels (searchPlaceholder + banners[0].id)
- * plus explicit top-level keys so watermark & banner fitMode persist on ALL Code.gs versions.
+ * plus explicit top-level keys so watermark, logoTextColor & banner fitMode persist on ALL Code.gs versions.
  */
 export const packSettingsForCloud = (settings: SiteSettings, timestamp = Date.now()): SiteSettings => {
   const cleanPlaceholder = stripSearchPlaceholderMeta(settings.searchPlaceholder);
@@ -339,10 +428,16 @@ export const packSettingsForCloud = (settings: SiteSettings, timestamp = Date.no
     id: stripBannerIdMeta(b.id, idx),
   }));
 
+  const normalizedLogoColor = normalizeHexColor(
+    settings.logoTextColor,
+    DEFAULT_SETTINGS.logoTextColor || '#eab308'
+  );
+
   const meta: PackedUiMeta = {
     we: settings.watermarkEnabled !== false,
     wt: settings.watermarkText ?? '',
     wl: settings.watermarkLink ?? '',
+    ltc: normalizedLogoColor,
     bf: cleanBanners.map((b) => (b.fitMode === 'cover' ? 'cover' : 'contain')),
     ts: timestamp,
   };
@@ -357,6 +452,7 @@ export const packSettingsForCloud = (settings: SiteSettings, timestamp = Date.no
     ...settings,
     searchPlaceholder: `${cleanPlaceholder}${packedSuffix}`,
     banners: packedBanners,
+    logoTextColor: normalizedLogoColor,
     watermarkEnabled: settings.watermarkEnabled !== false,
     watermarkText: settings.watermarkText ?? '',
     watermarkLink: settings.watermarkLink ?? '',

@@ -31,6 +31,7 @@ export interface SiteSettings {
   banners?: BannerSlide[];
   logoUrl?: string;
   logoText?: string;
+  logoTextColor?: string;
   watermarkText?: string;
   watermarkEnabled?: boolean;
   watermarkLink?: string;

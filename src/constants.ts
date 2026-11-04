@@ -46,6 +46,7 @@ export const DEFAULT_SETTINGS: SiteSettings = {
   banners: DEFAULT_BANNERS,
   logoUrl: '',
   logoText: 'BTB',
+  logoTextColor: '#eab308',
   watermarkText: 'Powered by Intisari',
   watermarkEnabled: true,
   watermarkLink: '',
